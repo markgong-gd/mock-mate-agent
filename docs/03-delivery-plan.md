@@ -63,14 +63,14 @@
 
 | 阶段 | 目标 | 任务数 | 已完成 | 状态 |
 |---|---|---|---|---|
-| P0 | 工程骨架与技术验证 | 7 | 0 | ⬜ |
+| P0 | 工程骨架与技术验证 | 7 | 5 | 🚧 |
 | P1 | C1 简历定制 | 13 | 0 | ⬜ |
 | P2a | 题库检索 + C2 文字面试 | 10 | 0 | ⬜ |
 | P2b | C3 诊断 | 6 | 0 | ⬜ |
 | P3 | 复训闭环 + 用量 + PII 脱敏 | 9 | 0 | ⬜ |
 | P4 | 语音面试 | 7 | 0 | ⬜ |
 | P5 | 评测与合规 | 8 | 0 | ⬜ |
-| **合计** | | **60** | **0** | |
+| **合计** | | **60** | **5** | |
 | 待补项 | 鉴权等（§9） | 7 | 0 | ⬜ |
 
 ---
@@ -79,13 +79,13 @@
 
 | 状态 | ID | 任务 | 验收标准 | 学习点 |
 |---|---|---|---|---|
-| ⬜ | P0-01 | 初始化单仓：pnpm、TS strict、Vite + React + React Router、Hono（`@hono/node-server`）、`tsx watch`、`tsup`；ESLint（含 `import/no-restricted-paths` 分层规则）+ Prettier + Vitest；按 02 §3 建目录 | `pnpm dev` 同时启动前后端，Vite 代理 `/api`；`pnpm lint` / `typecheck` / `test` 通过；违反分层的引用被 lint 拦截 | — |
-| ⬜ | P0-02 | `env`（Zod 校验）+ `.env.example`；docker compose（`pgvector/pgvector`）；Drizzle 接入，首个迁移启用 `vector`、`pg_trgm`；中间件 `requestId` / `devUser` / `error`；`/api/healthz`、`/api/readyz` | 缺少变量时启动报错；`pnpm db:migrate` 成功；错误响应为 `{ code, message, requestId }` | — |
-| ⬜ | P0-03 | 模型层：`llm/providers`、`registry`、`caps`、`structured`、`resilience`、`usage`；至少接入 2 个 provider（如 1 个免费 + 1 个付费，或 Ollama）；`llm_calls` 表；`GET /api/llm/ping?alias=` | 只改 `.env` 即可切换 provider；在仅支持 json_mode 的模型上，结构化输出经 Zod 修复重试通过；`llm_calls` 有记录且不含正文 | ChatModel、`withStructuredOutput`、Callbacks |
-| ⬜ | P0-04 | 最小 LangGraph 图：`ask → wait_answer(interrupt) → reply` 的回声问答图 + `PostgresSaver`；经 `graphs/stream.ts` 流到前端 `useChat`；`/api/dev/threads/:id/state` | 逐字输出、无缓冲，记录首字延迟；刷新页面和进程重启后都能 resume；流式适配方式决策写入 02 §1.3 | StateGraph、Annotation、`interrupt` / `Command`、Checkpointer、`streamMode` |
-| ⬜ | P0-05 | 前端基线：Tailwind + shadcn/ui、TanStack Query、`hc<AppType>` 客户端、布局与路由骨架 | 前端调用 ping 接口有完整类型提示 | — |
-| ⬜ | P0-06 | 魔搭部署 hello：`Dockerfile`（Node + 内置 Postgres）、`deploy/modelscope/entrypoint.sh`、`PORT=7860`；`accessGate` 中间件 + 口令页；每日 `pg_dump` 备份任务 | 线上访问需口令；重启 / 休眠后数据仍在；SSE 不被缓冲；部署平台决策写入 02 §1.3 / §10 | — |
-| ⬜ | P0-07 | 主版本登记；（可选）CI 骨架：lint、typecheck、单测、集成测试（Postgres service） | 主版本写入 02 §1.4 | — |
+| ✅ | P0-01 | 初始化单仓：pnpm、TS strict、Vite + React + React Router、Hono（`@hono/node-server`）、`tsx watch`、`tsup`；ESLint（含 `import/no-restricted-paths` 分层规则）+ Prettier + Vitest；按 02 §3 建目录 | `pnpm dev` 同时启动前后端，Vite 代理 `/api`；`pnpm lint` / `typecheck` / `test` 通过；违反分层的引用被 lint 拦截 | — (10-23) |
+| ✅ | P0-02 | `env`（Zod 校验）+ `.env.example`；docker compose（`pgvector/pgvector`）；Drizzle 接入，首个迁移启用 `vector`、`pg_trgm`；中间件 `requestId` / `devUser` / `error`；`/api/healthz`、`/api/readyz` | 缺少变量时启动报错；`pnpm db:migrate` 成功；错误响应为 `{ code, message, requestId }` | — (10-23) |
+| 🚧 | P0-03 | 模型层：`llm/providers`、`registry`、`caps`、`structured`、`resilience`、`usage`；至少接入 2 个 provider（如 1 个免费 + 1 个付费，或 Ollama）；`llm_calls` 表；`GET /api/llm/ping?alias=` | 只改 `.env` 即可切换 provider；在仅支持 json_mode 的模型上，结构化输出经 Zod 修复重试通过；`llm_calls` 有记录且不含正文（代码与单测已完成：deepseek / openai-compatible / ollama / fake 四种 kind；**待用真实 Key 实测 2 个 provider**） | ChatModel、`withStructuredOutput`、Callbacks |
+| ✅ | P0-04 | 最小 LangGraph 图：`ask → wait_answer(interrupt) → reply` 的回声问答图 + `PostgresSaver`；经 `graphs/stream.ts` 流到前端 `useChat`；`/api/dev/threads/:id/state` | 逐字输出、无缓冲，记录首字延迟；刷新页面和进程重启后都能 resume；流式适配方式决策写入 02 §1.3 | StateGraph、Annotation、`interrupt` / `Command`、Checkpointer、`streamMode` (10-23) |
+| ✅ | P0-05 | 前端基线：Tailwind + shadcn/ui、TanStack Query、`hc<AppType>` 客户端、布局与路由骨架 | 前端调用 ping 接口有完整类型提示 | — (10-23) |
+| 🚧 | P0-06 | 魔搭部署 hello：`Dockerfile`（Node + 内置 Postgres）、`deploy/modelscope/entrypoint.sh`、`PORT=7860`；`accessGate` 中间件 + 口令页；每日 `pg_dump` 备份任务 | 线上访问需口令；重启 / 休眠后数据仍在；SSE 不被缓冲；部署平台决策写入 02 §1.3 / §10（镜像本地实测通过，见 02 §10.3；**待部署到魔搭创空间后实测平台侧**） | — |
+| ✅ | P0-07 | 主版本登记；（可选）CI 骨架：lint、typecheck、单测、集成测试（Postgres service） | 主版本写入 02 §1.4 | — (10-23) |
 
 ## P1 · C1 简历定制（M1）
 

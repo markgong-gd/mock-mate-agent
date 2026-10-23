@@ -21,7 +21,7 @@
 | 5 | Schema 先行 | 领域对象、LLM 结构化输出、API 入参全部用 Zod 定义并校验，禁止裸解析字符串 |
 | 6 | 业务真相在业务表 | 档案、简历、面试轮次、诊断、短板存业务表；LangGraph 存档只是运行时状态 |
 | 7 | 决策逻辑纯函数化 | 路由判断、事实校验、得分聚合、短板合并都是纯函数，可脱离 LLM 与图单测 |
-| 8 | 平台相关代码收口 | 平台差异只出现在 `server/entry.ts`、`env`、`Dockerfile`、`deploy/` 中 |
+| 8 | 平台相关代码收口 | 平台差异只出现在 `backend/server/entry.ts`、`env`、`Dockerfile`、`deploy/` 中 |
 | 9 | 安全与合规内建 | 密钥只在后端、所有数据按 `userId` 隔离、PII 脱敏、一键删除、不做实时代答 |
 
 ---
@@ -77,8 +77,8 @@
 
 | # | 约定 | 原因 |
 |---|---|---|
-| 1 | 节点内调模型统一走 `llm/registry`，使用 LangChain 模型类，不混用 AI SDK Core | 保证 `streamMode: "messages"`、工具调用、回调追踪原生可用 |
-| 2 | 条件边的判断逻辑写在 `domain/` 纯函数中，图只负责调用 | 不跑图、不调模型也能单测边界 |
+| 1 | 节点内调模型统一走 `agent/llm/registry`，使用 LangChain 模型类，不混用 AI SDK Core | 保证 `streamMode: "messages"`、工具调用、回调追踪原生可用 |
+| 2 | 条件边的判断逻辑写在 `shared/domain/` 纯函数中，图只负责调用 | 不跑图、不调模型也能单测边界 |
 | 3 | `interrupt()` 单独放在一个无副作用的节点里 | 恢复时该节点会从头重新执行 |
 | 4 | `userId`、`requestId` 通过 `config.configurable` 注入，工具不把它们当参数 | 防止 Prompt 注入越权 |
 | 5 | LLM 可调用的工具只读；写库只发生在确定性节点或 `core` 中 | 写操作可审计、可测试 |
@@ -88,14 +88,14 @@
 
 | 事项 | 候选 | 决策时机 | 替换边界（只改这里） | 默认 / MVP |
 |---|---|---|---|---|
-| 流式适配方式 | `@ai-sdk/langchain` / 自写 SSE + 自写 hook | P0（P0-04） | `graphs/stream.ts`、`client/lib/chat-transport.ts` | `@ai-sdk/langchain` |
-| 部署平台 | 魔搭 Docker 创空间 / 自有机器 + 内网穿透 / 轻量服务器 | P0（P0-06） | `Dockerfile`、`deploy/`、`env` | 魔搭 |
+| 流式适配方式 | `@ai-sdk/langchain` / 自写 SSE + 自写 hook | P0（P0-04） | `agent/graphs/stream.ts`、`frontend/lib/chat-transport.ts` | **已定：`@ai-sdk/langchain`**（2026-10-23）。`toUIMessageStream` 消费 `streamMode: ["values","messages","custom"]`；`agent/graphs/stream.ts` 关闭其自带 start/finish，自行补 `start` → prelude data part → 图输出 → `data-metrics` → `finish`，流内错误替换为 `{code,message}` JSON；前端 `DefaultChatTransport` 只回传本轮 `answer`。实测 fake 模型逐字输出、首字 ≈ 30~70 ms，无缓冲 |
+| 部署平台 | 魔搭 Docker 创空间 / 自有机器 + 内网穿透 / 轻量服务器 | P0（P0-06） | `Dockerfile`、`deploy/`、`env` | **暂定：魔搭**（2026-10-23）。镜像本地实测通过（见 §10.3）；平台侧实测待上线后补记 |
 | 主力模型 | 按 §5 注册表切换；免费（智谱 Flash、硅基流动小模型）/ 付费（DeepSeek、百炼等）/ 本地 Ollama | 持续评估，P5 用评测结果定 | `.env` 的 `PROVIDER_*` / `MODEL_*` | 按评测结果 |
 | 向量化模型与维度 | 百炼 text-embedding / 硅基流动 bge-m3 / Ollama bge-m3 | P1（P1-08） | `MODEL_EMBED`、`EMBEDDING_DIM` + 重新向量化（§5.4） | 待定 |
-| 重排 | 不重排 / bge-reranker（`MODEL_RERANK`） | P2a（P2a-04），按检索评测结果 | `retrieval/rerank.ts` | 不重排 |
-| 长期记忆 | 仅业务表 / 业务表 + LangGraph `PostgresStore` | P3（P3-06） | `graphs/memory/*` | 仅业务表 |
-| 语音方案 | 半双工：ASR + TTS（豆包 / 百炼）；实时：百炼 Qwen-Omni-Realtime / 豆包端到端实时语音 | P4（P4-01） | `voice/*` + `MODEL_ASR` / `MODEL_TTS` / `MODEL_REALTIME` | 先半双工 |
-| 正式鉴权 | Better Auth（Drizzle 适配器） | **待补项**，对外开放前（03 B-01） | `server/middleware/dev-user.ts` → `auth.ts`；登录页与路由守卫 | 单用户 `devUser` + 部署时 `accessGate` |
+| 重排 | 不重排 / bge-reranker（`MODEL_RERANK`） | P2a（P2a-04），按检索评测结果 | `agent/retrieval/rerank.ts` | 不重排 |
+| 长期记忆 | 仅业务表 / 业务表 + LangGraph `PostgresStore` | P3（P3-06） | `agent/graphs/memory/*` | 仅业务表 |
+| 语音方案 | 半双工：ASR + TTS（豆包 / 百炼）；实时：百炼 Qwen-Omni-Realtime / 豆包端到端实时语音 | P4（P4-01） | `agent/voice/*` + `MODEL_ASR` / `MODEL_TTS` / `MODEL_REALTIME` | 先半双工 |
+| 正式鉴权 | Better Auth（Drizzle 适配器） | **待补项**，对外开放前（03 B-01） | `backend/server/middleware/dev-user.ts` → `auth.ts`；登录页与路由守卫 | 单用户 `devUser` + 部署时 `accessGate` |
 
 > 每项决策完成后，在本表更新结论，并在文末变更记录中登记。
 
@@ -105,21 +105,22 @@ LangGraph.js、LangChain、AI SDK 迭代快，引入或升级前以官方最新�
 
 | 依赖 | 主版本 | 登记日期 |
 |---|---|---|
-| node | 待 P0 初始化时填写 | — |
-| @langchain/langgraph / @langchain/langgraph-checkpoint-postgres | 待 P0 初始化时填写 | — |
-| @langchain/core / @langchain/openai | 待 P0 初始化时填写 | — |
-| ai / @ai-sdk/react / @ai-sdk/langchain | 待 P0 初始化时填写 | — |
-| hono | 待 P0 初始化时填写 | — |
-| drizzle-orm / drizzle-kit | 待 P0 初始化时填写 | — |
-| pg-boss | 待 P0 初始化时填写 | — |
-| postgres / pgvector | 待 P0 初始化时填写 | — |
-| zod | 待 P0 初始化时填写 | — |
+| node | 22（`engines` ≥ 22，镜像 `node:22-bookworm-slim`） | 2026-10-23 |
+| @langchain/langgraph / @langchain/langgraph-checkpoint-postgres | 1.x / 1.x（1.5 / 1.1） | 2026-10-23 |
+| @langchain/core / @langchain/openai | 1.x / 1.x（1.2 / 1.6）；另 @langchain/deepseek 1.x、@langchain/ollama 1.x | 2026-10-23 |
+| ai / @ai-sdk/react / @ai-sdk/langchain | 7.x / 4.x / 3.x | 2026-10-23 |
+| hono | 4.x | 2026-10-23 |
+| drizzle-orm / drizzle-kit | 0.45 / 0.31 | 2026-10-23 |
+| pg-boss | 12.x | 2026-10-23 |
+| postgres / pgvector | 17 / 0.8 | 2026-10-23 |
+| zod | 4.x | 2026-10-23 |
+| 其它 | react 19、react-router 8、vite 8、vitest 5、tailwindcss 4、typescript 6、eslint 10 | 2026-10-23 |
 
 ### 1.5 构建与运行
 
 | 场景 | 方式 |
 |---|---|
-| 开发 | `pnpm dev` 并行启动 Vite（前端，代理 `/api` 到后端）与 `tsx watch src/server/entry.ts`（后端） |
+| 开发 | `pnpm dev` 并行启动 Vite（前端，代理 `/api` 到后端）与 `tsx watch src/backend/server/entry.ts`（后端） |
 | 构建 | `vite build` → `dist/client`；`tsup` 打包后端 → `dist/server` |
 | 生产 | `node dist/server/entry.js`：Hono 同时托管 `dist/client` 静态资源与 `/api/*`，同源无 CORS |
 
@@ -155,116 +156,137 @@ LangGraph.js、LangChain、AI SDK 迭代快，引入或升级前以官方最新�
 
 ### 2.2 分层与职责
 
+`src/` 按 **前端 / 后端 / 智能体 / 公共底座** 四块物理分目录，每块内部再分层（逐文件说明见 [04 · 代码地图](04-code-map.md)）：
+
 ```text
-src/client  ── 只 import type AppType ──> src/server
+src/frontend ── 只 import type AppType ──> src/backend/server
    页面 / 组件 / hooks / hc 客户端
 
-src/server     Hono：中间件 + 路由；路由只做“解析 -> 调 core -> 映射”
+------------------------------- backend（后端）-------------------------------
+src/backend/server   Hono：中间件 + 路由；路由只做“解析 -> 调 core -> 映射”
    |
    v
-src/core       用例：权限、事务、幂等、加锁、调图、入队、写库
+src/backend/core     用例：权限、事务、幂等、加锁、调图、入队、写库
    |
-   +--> src/graphs     LangGraph 图：interview / diagnosis / resume / extract
-   |       +--> src/tools       只读工具（userId 从 config 取）
-   |       +--> src/retrieval   QuestionRetriever / FactRetriever
-   |       +--> src/prompts、src/rubrics
-   +--> src/jobs       pg-boss 注册与 handler（handler 只调 core）
-   +--> src/voice      VoiceProvider 端口与适配器（P4）
-   v
-src/llm        模型注册表 / 能力表 / 结构化输出 / 韧性 / 脱敏 / 用量回调
-src/db         Drizzle schema / repos（强制传 userId）/ client / 向量查询
-   v
-src/domain     纯函数：路由判断 / 出题分配 / factRefGuard / aggregate / merge / skillGap
-   v
-src/schemas    Zod 领域定义      src/env  环境变量校验      src/shared  错误码 / 工具 / 日志
+   +--> src/backend/jobs   pg-boss 注册与 handler（handler 只调 core）
+   +--> src/backend/db     Drizzle schema / repos（强制传 userId）/ client / 向量查询
+   |
+------------------------------- agent（智能体）------------------------------
+   +--> src/agent/graphs     LangGraph 图：interview / diagnosis / resume / extract
+   |       +--> src/agent/tools       只读工具（userId 从 config 取）
+   |       +--> src/agent/retrieval   QuestionRetriever / FactRetriever
+   |       +--> src/agent/prompts、src/agent/rubrics
+   +--> src/agent/voice      VoiceProvider 端口与适配器（P4）
+   +--> src/agent/llm        模型注册表 / 能力表 / 结构化输出 / 韧性 / 脱敏 / 用量回调
+
+------------------------------- shared（公共底座）----------------------------
+src/shared/domain    纯函数：路由判断 / 出题分配 / factRefGuard / aggregate / merge / skillGap
+src/shared/schemas   Zod 领域定义
+src/shared/env       环境变量校验（server.ts 仅后端 / client.ts 仅前端）
+src/shared/common    ctx / 错误码 / id / 日志
 ```
 
-| 层 | 目录 | 职责 |
+| 块 | 层目录 | 职责 |
 |---|---|---|
-| 应用 | `client` | 页面、交互、流式渲染；只通过 HTTP 调后端 |
-| 应用 | `server` | 中间件、路由、静态资源、进程启动与优雅停机；不写业务逻辑 |
-| 用例 | `core` | 权限、事务、幂等、并发控制、调图、入队、持久化 |
-| 编排 | `graphs` | 四张图的状态、节点、边；节点可调用 llm、retrieval、repos |
-| 编排 | `tools` / `retrieval` / `prompts` / `rubrics` | 工具、检索器、带版本的 Prompt、Rubric 定义 |
-| 编排 | `jobs` / `voice` | 异步任务与语音适配 |
-| 基础 | `llm` / `db` | 模型网关、数据访问 |
-| 领域 | `domain` | 纯业务规则，零 IO、零三方 SDK |
-| 基础 | `schemas` / `env` / `shared` | 定义、配置、公共工具 |
+| 前端 | `frontend` | 页面、交互、流式渲染；只通过 HTTP 调后端 |
+| 后端 | `backend/server` | 中间件、路由、静态资源、进程启动与优雅停机；不写业务逻辑 |
+| 后端 | `backend/core` | 权限、事务、幂等、并发控制、调图、入队、持久化 |
+| 后端 | `backend/jobs` | 异步任务（handler 只调 core） |
+| 后端 | `backend/db` | 数据访问 |
+| 智能体 | `agent/graphs` | 图的状态、节点、边；节点可调用 llm、retrieval、repos |
+| 智能体 | `agent/tools` / `agent/retrieval` / `agent/prompts` / `agent/rubrics` | 工具、检索器、带版本的 Prompt、Rubric 定义 |
+| 智能体 | `agent/llm` / `agent/voice` | 模型网关、语音适配 |
+| 公共 | `shared/domain` | 纯业务规则，零 IO、零三方 SDK |
+| 公共 | `shared/schemas` / `shared/env` / `shared/common` | 定义、配置、公共工具 |
+
+> 智能体代码运行在后端进程内（不是独立服务），由 `backend/core` 调用；节点可以读 `backend/db`（取数据），存档与业务表共用连接池。
 
 ### 2.3 依赖规则
 
-只允许向下依赖，由 ESLint `import/no-restricted-paths` 强制：
+只允许向下依赖，由 ESLint `import/no-restricted-paths` 强制（`eslint.config.js` 的 `LAYER_DEPS`）：
 
 ```text
-client  ----> schemas, shared/client, server(仅 import type AppType)
-server  ----> core, schemas, shared, env
-core    ----> graphs, jobs, voice, retrieval, llm, db, domain, schemas, shared, env
-graphs  ----> tools, retrieval, prompts, rubrics, llm, db, domain, schemas, shared
-jobs    ----> core（handler 只调 core）
-tools, retrieval -> llm, db, domain, schemas, shared
-llm, db ----> schemas, shared, env
-domain  ----> schemas                     零 IO、零三方 SDK
-schemas ----> zod
+frontend          ----> shared/schemas, shared/common(仅 errors.ts), shared/env(仅 client.ts),
+                        backend/server(仅 import type AppType)
+backend/server    ----> backend/core, shared/{schemas,common,env}
+backend/core      ----> agent/{graphs,llm,retrieval,voice}, backend/{jobs,db}, shared/*
+backend/jobs      ----> backend/core（handler 只调 core）
+agent/graphs      ----> agent/{tools,retrieval,prompts,rubrics,llm}, backend/db, shared/{domain,schemas,common}
+agent/tools, agent/retrieval -> agent/llm, backend/db, shared/{domain,schemas,common}
+agent/llm, backend/db ----> shared/{schemas,common,env}
+shared/domain     ----> shared/schemas            零 IO、零三方 SDK
+shared/schemas    ----> zod
 ```
 
-- `core` 及以下不得依赖 `hono`、`react`；身份只通过 `ctx` 传入，不读 Cookie / Header。
-- `client` 不得引入 Node 专属 API 与服务端 SDK；对后端只允许 `import type`。
-- 密钥只在 `env/server` 中读取，`client` 只能读 `VITE_*` 非敏感变量。
+- `backend/core` 及以下（含 `agent/*`、`shared/*`）不得依赖 `hono`、`react`；身份只通过 `ctx` 传入，不读 Cookie / Header。
+- `frontend` 不得引入 Node 专属 API 与服务端 SDK；对后端只允许 `import type`。
+- 密钥只在 `shared/env/server` 中读取，`frontend` 只能读 `VITE_*` 非敏感变量。
 
 ---
 
 ## 3. 工程结构
 
+> 已有文件的逐一说明、请求链路与前端 / 后端 / 智能体交互图见 [04 · 代码地图](04-code-map.md)；每个目录下也有 `README.md`。
+
 ```text
 mock-mate-agent/
 ├── src/
-│   ├── client/                         # Vite SPA
-│   │   ├── main.tsx  router.tsx
+│   ├── frontend/                       # 【前端】Vite SPA
+│   │   ├── main.tsx  router.tsx  nav.ts
 │   │   ├── routes/                     # profile / jobs / resumes / interviews / reports / growth / settings
 │   │   ├── features/<domain>/{components,hooks,queries}.ts
+│   │   ├── components/ui/              # shadcn/ui
 │   │   └── lib/{api.ts, chat-transport.ts, pdf-text.ts}   # hc 客户端 / 流式端点 / 浏览器端 PDF 提取
-│   ├── server/
-│   │   ├── app.ts                      # Hono 实例、中间件装配、导出 AppType
-│   │   ├── entry.ts                    # 启动：迁移锁、pg-boss、checkpointer.setup()、静态资源、优雅停机
-│   │   ├── middleware/{request-id,access-gate,dev-user,rate-limit,error}.ts
-│   │   └── routes/{health,llm,profile,jobs,resumes,interviews,reports,training,growth,usage,privacy,voice,dev}.ts
-│   ├── core/                           # {profile,job,resume,interview,diagnosis,training,privacy,usage}.service.ts
-│   ├── graphs/
-│   │   ├── checkpointer.ts             # PostgresSaver 单例
-│   │   ├── stream.ts                   # LangGraph 流 -> UI Message Stream
-│   │   ├── interview/{state.ts, graph.ts, nodes/*.ts}
-│   │   ├── diagnosis/{state.ts, graph.ts, nodes/*.ts}
-│   │   ├── resume/{state.ts, graph.ts, nodes/*.ts}
-│   │   ├── extract/{profile.ts, job.ts}
-│   │   └── memory/                     # P3：LangGraph Store（可选）
-│   ├── tools/                          # 只读工具：读档案 / JD / 历史短板 / 检索
-│   ├── retrieval/{question-retriever.ts, fact-retriever.ts, rerank.ts}
-│   ├── prompts/*.ts                    # 带版本号的 Prompt
-│   ├── rubrics/v1.ts
-│   ├── jobs/{index.ts, diagnose.ts, embed-questions.ts, embed-facts.ts, backup.ts}
-│   ├── voice/                          # P4
-│   ├── llm/{providers,registry,caps,structured,resilience,redact,usage}.ts
-│   ├── db/
-│   │   ├── schema/*.ts                 # 按领域拆分的表定义
-│   │   ├── repos/*.ts                  # 所有方法强制传 userId
-│   │   ├── vector.ts                   # 向量 / 混合检索 SQL
-│   │   └── client.ts                   # node-postgres 连接池（Drizzle、PostgresSaver、pg-boss 共用连接串）
-│   ├── domain/
-│   │   ├── interview/{route.ts, allocate.ts}   # 评估后路由 / 出题分配
-│   │   ├── resume/fact-ref-guard.ts
-│   │   ├── diagnosis/aggregate.ts
-│   │   ├── weakness/merge.ts
-│   │   └── matching/skill-gap.ts
-│   ├── schemas/                        # common / profile / job / resume / interview / rubric / diagnosis / weakness / question
-│   ├── env/{server.ts, client.ts}
-│   └── shared/{errors.ts, ids.ts, logger.ts, result.ts}
+│   │
+│   ├── backend/                        # 【后端】
+│   │   ├── server/
+│   │   │   ├── app.ts                  # Hono 实例、中间件装配、导出 AppType
+│   │   │   ├── entry.ts                # 启动：迁移锁、pg-boss、checkpointer.setup()、静态资源、优雅停机
+│   │   │   ├── middleware/{request-id,access-gate,dev-user,rate-limit,error}.ts
+│   │   │   └── routes/{health,llm,profile,jobs,resumes,interviews,reports,training,growth,usage,privacy,voice,dev}.ts
+│   │   ├── core/                       # {profile,job,resume,interview,diagnosis,training,privacy,usage}.service.ts
+│   │   ├── jobs/{index.ts, diagnose.ts, embed-questions.ts, embed-facts.ts, backup.ts}
+│   │   └── db/
+│   │       ├── schema/*.ts             # 按领域拆分的表定义
+│   │       ├── repos/*.ts              # 所有方法强制传 userId
+│   │       ├── vector.ts               # 向量 / 混合检索 SQL
+│   │       └── client.ts               # node-postgres 连接池（Drizzle、PostgresSaver、pg-boss 共用连接串）
+│   │
+│   ├── agent/                          # 【智能体】运行在后端进程内
+│   │   ├── graphs/
+│   │   │   ├── checkpointer.ts         # PostgresSaver 单例
+│   │   │   ├── config.ts               # configurable 注入约定
+│   │   │   ├── stream.ts               # LangGraph 流 -> UI Message Stream
+│   │   │   ├── echo/                   # P0 回声图（样板）
+│   │   │   ├── interview/{state.ts, graph.ts, nodes/*.ts}
+│   │   │   ├── diagnosis/{state.ts, graph.ts, nodes/*.ts}
+│   │   │   ├── resume/{state.ts, graph.ts, nodes/*.ts}
+│   │   │   ├── extract/{profile.ts, job.ts}
+│   │   │   └── memory/                 # P3：LangGraph Store（可选）
+│   │   ├── llm/{providers,registry,caps,fake,structured,resilience,redact,usage}.ts
+│   │   ├── prompts/*.ts                # 带版本号的 Prompt
+│   │   ├── tools/                      # 只读工具：读档案 / JD / 历史短板 / 检索
+│   │   ├── retrieval/{question-retriever.ts, fact-retriever.ts, rerank.ts}
+│   │   ├── rubrics/v1.ts
+│   │   └── voice/                      # P4
+│   │
+│   └── shared/                         # 【公共底座】
+│       ├── domain/
+│       │   ├── interview/{route.ts, allocate.ts}   # 评估后路由 / 出题分配
+│       │   ├── resume/fact-ref-guard.ts
+│       │   ├── diagnosis/aggregate.ts
+│       │   ├── weakness/merge.ts
+│       │   └── matching/skill-gap.ts
+│       ├── schemas/                    # common / profile / job / resume / interview / rubric / diagnosis / weakness / question
+│       ├── env/{load.ts, server.ts, client.ts}
+│       └── common/{ctx.ts, errors.ts, ids.ts, logger.ts}
 ├── db/
 │   ├── migrations/                     # drizzle-kit 生成；0000 启用 vector、pg_trgm
 │   └── seeds/{questions,rubrics}/      # 题库（JSONL）、Rubric
+├── tests/{helpers,integration}/        # 集成测试；单元测试与源码同目录（*.test.ts）
 ├── evals/                              # promptfoo 配置与数据集：resume / interviewer / diagnosis / retrieval / bias
 ├── deploy/
-│   ├── modelscope/entrypoint.sh        # 初始化并启动内置 Postgres，再启动应用
-│   └── README.md
+│   └── modelscope/entrypoint.sh        # 初始化并启动内置 Postgres，再启动应用
 ├── docker-compose.yml                  # db（默认）；app、langfuse（profile 可选）
 ├── Dockerfile                          # 生产单镜像
 ├── vite.config.ts  tsup.config.ts  drizzle.config.ts  eslint.config.js  vitest.config.ts
@@ -278,8 +300,8 @@ mock-mate-agent/
 
 ### 4.1 接口与类型
 
-- 后端 `server/app.ts` 用链式写法注册路由并导出 `type AppType`；前端 `lib/api.ts` 用 `hc<AppType>('/')` 获得类型安全客户端。
-- 入参统一由 `@hono/zod-validator` 校验，Schema 来自 `schemas/`。
+- 后端 `backend/server/app.ts` 用链式写法注册路由并导出 `type AppType`；前端 `lib/api.ts` 用 `hc<AppType>('/')` 获得类型安全客户端。
+- 入参统一由 `@hono/zod-validator` 校验，Schema 来自 `shared/schemas/`。
 - 路径前缀 `/api`；只有一个客户端，不做版本号。
 
 | 领域 | 路由 |
@@ -310,7 +332,7 @@ mock-mate-agent/
 
 ### 4.3 错误契约
 
-统一 `{ code, message, requestId, details? }`，`code` 为 `shared/errors.ts` 中的枚举（§9.3），前端按 `code` 决定文案与是否重试。流式过程中的错误以 UI Message Stream 的 error part 下发，`message` 只包含错误码对应的文案。
+统一 `{ code, message, requestId, details? }`，`code` 为 `shared/common/errors.ts` 中的枚举（§9.3），前端按 `code` 决定文案与是否重试。流式过程中的错误以 UI Message Stream 的 error part 下发，`message` 只包含错误码对应的文案。
 
 ### 4.4 同源与会话
 
@@ -366,13 +388,13 @@ ALLOWED_PROVIDERS=*            # 对外开放时改为国内已备案 provider �
 
 | 文件 | 职责 |
 |---|---|
-| `llm/providers.ts` | `kind` → LangChain 模型类工厂：`openai-compatible`（`ChatOpenAI` + `baseURL`）、`deepseek`、`ollama`，可按需扩展 |
-| `llm/registry.ts` | 解析 `MODEL_*`，按别名返回模型实例（带缓存）；启动时校验别名完整、provider 在 `ALLOWED_PROVIDERS` 内 |
-| `llm/caps.ts` | 模型能力表（内置常见模型 + `MODEL_CAPS_*` 覆盖） |
-| `llm/structured.ts` | 结构化输出：按能力选择方式 → Zod 校验 → 修复重试 |
-| `llm/resilience.ts` | 超时、重试、降级 |
-| `llm/redact.ts` | 发送给模型前脱敏 |
-| `llm/usage.ts` | 回调处理器，写 `llm_calls` |
+| `agent/llm/providers.ts` | `kind` → LangChain 模型类工厂：`openai-compatible`（`ChatOpenAI` + `baseURL`）、`deepseek`、`ollama`，可按需扩展 |
+| `agent/llm/registry.ts` | 解析 `MODEL_*`，按别名返回模型实例（带缓存）；启动时校验别名完整、provider 在 `ALLOWED_PROVIDERS` 内 |
+| `agent/llm/caps.ts` | 模型能力表（内置常见模型 + `MODEL_CAPS_*` 覆盖） |
+| `agent/llm/structured.ts` | 结构化输出：按能力选择方式 → Zod 校验 → 修复重试 |
+| `agent/llm/resilience.ts` | 超时、重试、降级 |
+| `agent/llm/redact.ts` | 发送给模型前脱敏 |
+| `agent/llm/usage.ts` | 回调处理器，写 `llm_calls` |
 
 ### 5.2 能力表与结构化输出降级
 
@@ -426,9 +448,9 @@ Zod 校验 --失败--> 携带校验错误修复重试 1 次 --仍失败--> 走 r
 
 ### 5.6 用量与成本
 
-- `llm/usage.ts` 实现 LangChain `BaseCallbackHandler`，在 `handleLLMEnd` 中写入 `llm_calls`：`user_id`、`session_id`、`function_id`、`alias`、`provider`、`model`、`prompt_version`、`input_tokens`、`output_tokens`、`latency_ms`、`status`。**不记录正文**。
-- 成本 = Token × 单价，单价在 `llm/pricing.ts` 中按 `provider:model` 配置。
-- 单场面试 Token 上限（`core/config.ts`）超出时返回 `BUDGET_EXCEEDED`。
+- `agent/llm/usage.ts` 实现 LangChain `BaseCallbackHandler`，在 `handleLLMEnd` 中写入 `llm_calls`：`user_id`、`session_id`、`function_id`、`alias`、`provider`、`model`、`prompt_version`、`input_tokens`、`output_tokens`、`latency_ms`、`status`。**不记录正文**。
+- 成本 = Token × 单价，单价在 `agent/llm/pricing.ts` 中按 `provider:model` 配置。
+- 单场面试 Token 上限（`backend/core/config.ts`）超出时返回 `BUDGET_EXCEEDED`。
 
 ---
 
@@ -508,7 +530,7 @@ GET  /api/resumes/:id/export
 
 ### 6.4 C2 面试图（核心）
 
-**状态**（`graphs/interview/state.ts`）：
+**状态**（`agent/graphs/interview/state.ts`）：
 
 | 字段 | 说明 | Reducer |
 |---|---|---|
@@ -667,7 +689,7 @@ JD 技能点 + 历史短板 + 设置(难度 / 题数 / 类型)
 questionQueue（写入图状态）
 ```
 
-- 封装为 LangChain `BaseRetriever` 子类 `QuestionRetriever`，底层用 `db/vector.ts` 的 SQL。
+- 封装为 LangChain `BaseRetriever` 子类 `QuestionRetriever`，底层用 `backend/db/vector.ts` 的 SQL。
 - `FactRetriever` 同理，作用于 `facts.embedding`，且强制 `user_id = ctx.userId`。
 - 检索评测：`evals/retrieval` 维护“JD 技能点 → 期望题目”小样本集，计算 recall@k，用于调参与决定是否启用重排。
 
@@ -696,7 +718,7 @@ db/seeds/questions/*.jsonl --pnpm db:seed--> questions（幂等 upsert，embeddi
 | 层 | 职责 | 规则 |
 |---|---|---|
 | `schemas`（Zod） | 领域对象、LLM 结构化输出、API 入参 | 唯一定义源 |
-| `db/schema`（Drizzle） | 存储结构 | 用 `drizzle-zod` 生成或在 repo 显式映射，禁止两处各自手写同一结构 |
+| `backend/db/schema`（Drizzle） | 存储结构 | 用 `drizzle-zod` 生成或在 repo 显式映射，禁止两处各自手写同一结构 |
 | 图状态 | LangGraph State | 字段类型引用 `schemas` |
 
 ### 8.2 核心数据模型（ER）
@@ -729,7 +751,7 @@ pgboss.*     任务队列（pg-boss 自管）
 - **jsonb 取舍**：整取整存的数据（`resumes.content`、`diagnosis_reports.scores`）用 jsonb，读写都过 Zod；需要统计 / 关联的数据（weaknesses、skill_score_history、job_requirements）单独建表。
 - **索引**：常用查询建 `(user_id, created_at desc)`；`interview_turns (session_id, seq)` 唯一；`interview_turns (session_id, idempotency_key)` 唯一；向量与标签索引见 §7.1。
 - **迁移**：`drizzle-kit generate` + `migrate`；首个迁移启用 `vector`、`pg_trgm`。`langgraph.*` 由 `checkpointer.setup()` 创建，`pgboss.*` 由 pg-boss 启动时创建。
-- **迁移时机**：本地与 CI 通过 `pnpm db:migrate` 执行；单实例部署时由 `entry.ts` 在启动阶段持有 advisory lock 后执行迁移，失败则退出。
+- **迁移时机**：本地与 CI 通过 `pnpm db:migrate` 执行；`MIGRATE_ON_START=true` 时由 `core/runtime.ts` 在启动阶段（`ensureUser` 之前）持有 advisory lock 后执行迁移，失败则退出。默认 `false`，即开发与生产都把迁移作为独立步骤——此时若漏跑迁移，启动会在 `ensureUser` 处报 `relation "users" does not exist`。幂等性由 `drizzle.__drizzle_migrations` 保证（详见根 README「数据库迁移」）。
 - **种子数据**：Rubric、题库由幂等 seed 脚本导入。
 
 ### 8.4 一键删除
@@ -756,11 +778,11 @@ pgboss.*     任务队列（pg-boss 自管）
 
 | 出口 | 使用方 | 内容 |
 |---|---|---|
-| `env/server` | 后端 | `DATABASE_URL`、`PROVIDERS` / `PROVIDER_*` / `MODEL_*` / `MODEL_CAPS_*`、`EMBEDDING_DIM`、`ALLOWED_PROVIDERS`、`DEV_USER_ID`、`ACCESS_PASSWORD`、`COOKIE_SECRET`、`PORT`、`LOG_LEVEL`、`BACKUP_DIR` |
-| `env/client` | 浏览器 | 仅 `VITE_*` 非敏感项 |
+| `shared/env/server` | 后端 | `DATABASE_URL`、`PROVIDERS` / `PROVIDER_*` / `MODEL_*` / `MODEL_CAPS_*`、`EMBEDDING_DIM`、`ALLOWED_PROVIDERS`、`DEV_USER_ID`、`ACCESS_PASSWORD`、`COOKIE_SECRET`、`PORT`、`LOG_LEVEL`、`BACKUP_DIR` |
+| `shared/env/client` | 浏览器 | 仅 `VITE_*` 非敏感项 |
 
 - 启动时 Zod 校验，缺失或非法立即退出。
-- 业务开关集中在 `core/config.ts`：最大题数、最大追问次数、单场 Token 上限、简历文本长度上限。
+- 业务开关集中在 `backend/core/config.ts`：最大题数、最大追问次数、单场 Token 上限、简历文本长度上限。
 
 ### 9.2 可观测
 
@@ -798,14 +820,14 @@ pgboss.*     任务队列（pg-boss 自管）
 
 | 项 | 措施 | 对应需求 |
 |---|---|---|
-| 密钥 | 只在后端 `env/server`；浏览器 bundle 零密钥（CI 检查 `client` 中不出现非 `VITE_` 变量） | N-7 |
+| 密钥 | 只在后端 `shared/env/server`；浏览器 bundle 零密钥（CI 检查 `frontend` 中不出现非 `VITE_` 变量） | N-7 |
 | 访问控制 | 当前：部署时 `accessGate`（§9.5）；正式鉴权为待补项 | R-A-1 |
 | 数据隔离 | Repo 强制 `userId`；工具与检索器从 `config` 取 `userId` | N-6 |
 | 限流 | 按 IP；LLM 相关接口更严格；单场 Token 上限 | N-12 |
 | CSRF | 同源 + `SameSite=Lax` Cookie；写操作校验 `Origin` | N-6 |
 | 上传 | 不上传原文件，只上传提取后的文本；后端限制长度 | N-1、N-2 |
 | Prompt 注入 | JD / 简历文本作为数据用分隔符包裹；工具只读且按用户限定 | N-6 |
-| PII 脱敏 | `llm/redact` 在发送给模型、写日志前掩码手机号、邮箱、证件号；联系方式不进模型 | N-3 |
+| PII 脱敏 | `agent/llm/redact` 在发送给模型、写日志前掩码手机号、邮箱、证件号；联系方式不进模型 | N-3 |
 | 同意 | 上传前单独同意，记录到 `consents`，后端校验 | N-4 |
 | 一键删除 | §8.4 | N-5 |
 | 偏见 | Rubric 与 Prompt 不使用受保护特征；`evals/bias` 回归 | N-8 |
@@ -899,18 +921,32 @@ install (pnpm 缓存) -> lint（含分层约束）-> typecheck -> unit + 图测�
 3. Cookie 与 `accessGate` 在平台域名下正常工作。
 4. 镜像体积与冷启动时间可接受。
 
+**本地实测结果（2026-10-23，`docker run -v <volume>:/mnt/workspace` 模拟）**：
+
+| 项目 | 结果 |
+|---|---|
+| 镜像体积 | 766 MB |
+| 冷启动（含 initdb）/ 重启 | 3 s / 2 s 到 `/api/healthz` 可用 |
+| SSE 响应头 | `text/event-stream`、`Cache-Control: no-cache, no-transform`、`X-Accel-Buffering: no`；逐字输出，首字 ≈ 70 ms |
+| 容器重启后数据 | 回声图存档、`llm_calls` 完整，可直接 resume |
+| 优雅停机 | SIGTERM → node 停止接收请求并退出 → `pg_ctl stop -m fast` |
+| accessGate | 未登录：页面 / API / 静态资源均 401，`/api/healthz` 放行；登录后签名 httpOnly Cookie 生效 |
+| 备份 | pg-boss 按 `BACKUP_CRON` 执行 `pg_dump -Fc`，保留 7 份；`pg_restore` 到新库验证可恢复 |
+
+**平台侧待实测**（上线魔搭后补记）：网关是否缓冲 SSE、休眠唤醒后的恢复、平台域名下 Cookie 行为。
+
 ---
 
 ## 11. 关键接口约定（类型层面）
 
 ```ts
-// src/shared/ctx.ts
+// src/shared/common/ctx.ts
 export interface RequestCtx {
   userId: string;
   requestId: string;
 }
 
-// src/llm/registry.ts
+// src/agent/llm/registry.ts
 export type ChatAlias = 'chat' | 'judge' | 'extract' | 'fallback';
 export interface ModelCaps {
   jsonSchema: boolean;
@@ -922,7 +958,7 @@ export interface ModelCaps {
 export declare function getChatModel(alias: ChatAlias): { model: BaseChatModel; id: string; caps: ModelCaps };
 export declare function getEmbeddings(): { model: Embeddings; id: string; dim: number };
 
-// src/llm/structured.ts
+// src/agent/llm/structured.ts
 export interface CallMeta {
   functionId: string;
   promptVersion: string;
@@ -935,7 +971,7 @@ export declare function generateStructured<T extends z.ZodTypeAny>(
   meta: CallMeta,
 ): Promise<z.infer<T>>;
 
-// src/graphs/interview/state.ts
+// src/agent/graphs/interview/state.ts
 export const InterviewState = Annotation.Root({
   ...MessagesAnnotation.spec,
   questionQueue: Annotation<QueuedQuestion[]>,
@@ -947,14 +983,14 @@ export const InterviewState = Annotation.Root({
   status: Annotation<'running' | 'finished'>,
 });
 
-// src/graphs/config.ts —— 通过 config.configurable 注入
+// src/agent/graphs/config.ts —— 通过 config.configurable 注入
 export interface GraphConfigurable {
   thread_id: string;
   userId: string;
   requestId: string;
 }
 
-// src/domain/interview/route.ts —— 条件边的唯一判断来源
+// src/shared/domain/interview/route.ts —— 条件边的唯一判断来源
 export type RouteDecision = 'follow_up' | 'next' | 'finish';
 export declare function routeAfterEvaluate(input: {
   cursor: number;
@@ -965,7 +1001,7 @@ export declare function routeAfterEvaluate(input: {
   aborted: boolean;
 }): RouteDecision;
 
-// src/retrieval/question-retriever.ts
+// src/agent/retrieval/question-retriever.ts
 export interface QuestionQuery {
   skills: string[];
   weaknessIds?: string[];
@@ -977,13 +1013,13 @@ export declare class QuestionRetriever extends BaseRetriever {
   retrieve(ctx: RequestCtx, q: QuestionQuery): Promise<RetrievedQuestion[]>;
 }
 
-// src/voice/types.ts —— P4
+// src/agent/voice/types.ts —— P4
 export interface VoiceProvider {
   transcribe(ctx: RequestCtx, audio: Blob): Promise<{ text: string; durationMs: number }>;
   synthesize(ctx: RequestCtx, text: string): Promise<ReadableStream<Uint8Array>>;
 }
 
-// src/shared/errors.ts
+// src/shared/common/errors.ts
 export interface ApiError {
   code: AppErrorCode;
   message: string;
@@ -1001,7 +1037,7 @@ export interface ApiError {
 
 - **出题检索**只在开场做一次；每轮只有 1 次结构化评估 + 1 次流式生成，首字延迟主要取决于模型。
 - **模型分级**：评估用低延迟的 `judge`（非推理模型），生成用 `chat`；诊断异步执行，不阻塞面试页。
-- **诊断并行**：逐题打分用 `Send` 并行，并发数受 provider 限流约束（`core/config.ts` 可配）。
+- **诊断并行**：逐题打分用 `Send` 并行，并发数受 provider 限流约束（`backend/core/config.ts` 可配）。
 - **存档体积**：`messages` 只保留本场对话；单场题数与追问次数有上限，存档体积可控。
 - **数据库**：常驻进程使用连接池；Drizzle、PostgresSaver、pg-boss 合计连接数控制在 10 以内。
 - **前端**：按路由分包；PDF 文本提取的 pdf.js worker 懒加载。
@@ -1015,7 +1051,7 @@ export interface ApiError {
 | 1 | **密钥安全**：模型 Key 只存在后端 | §2.3、§9.1、§9.4 |
 | 2 | **模型可替换**：业务只用别名；换 provider 只改环境变量 | §5 |
 | 3 | **Schema 先行**：LLM 结构化输出与 API 入参用 Zod 校验，禁止裸解析字符串 | §5.2、§8.1 |
-| 4 | **事实溯源**：简历每条描述带 `factRefs`，未关联事实的内容不得导出 | §6.3、`domain/resume/fact-ref-guard.ts` |
+| 4 | **事实溯源**：简历每条描述带 `factRefs`，未关联事实的内容不得导出 | §6.3、`shared/domain/resume/fact-ref-guard.ts` |
 | 5 | **图的约定**：路由判断在 `domain`；`interrupt` 节点无副作用；工具只读；`userId` 从 config 注入 | §1.2 |
 | 6 | **不丢进度**：回答先落库、幂等、加锁、存档续跑 | §6.4、§9.3 |
 | 7 | **隐私合规**：PII 最小化、脱敏、一键删除（含存档、队列、日志、备份）；数据结构在 P2b 结束前定稿 | §8.3、§8.4、§9.4 |
@@ -1034,6 +1070,8 @@ export interface ApiError {
 | 2026-10-23 | 合并工程架构方案：确定 pnpm Monorepo + 前后端物理分离；新增 Hono、契约工具链、TanStack Query、MSW、pg-boss、Turborepo 等；部署调整为前端 Vercel + 后端容器；补充工程结构、运行时链路、数据层、横切约束 |
 | 2026-10-23 | 修订：§1.2 正式鉴权决策提前到 P0 / P1（随 DB 托管），P1-00 上线最小鉴权；同源转发补语音例外与“api 只接受代理来的流量”（新增 `proxy-guard`、`env/web-server`，转发由 rewrites 改为 `middleware.ts` 以注入代理凭证）；替换边界补 Cookie 与 CSRF 配置；§6.5 一键删除补 Langfuse、日志、备份；需求编号对齐 01 修订版 |
 | 2026-10-23 | **重写**：项目定位改为个人项目（1 人、学习性质，本地优先、免费平台部署、国内优先）。主要变更见下表 |
+| 2026-10-23 | P0 完成：§1.3 流式适配定为 `@ai-sdk/langchain`、部署平台暂定魔搭；§1.4 登记主版本；§10.3 补本地实测结果。实现补充：provider 新增 `fake` kind（离线假模型，无 Key 时跑通链路）；`llm` 层只定义 `UsageCallbackHandler`，写库的 sink 由 `core/usage.ts` 注入（保持 llm 不依赖 db） |
+| 2026-10-23 | 目录重组：`src/` 按 `frontend` / `backend/{server,core,db,jobs}` / `agent/{graphs,llm,prompts,...}` / `shared/{domain,schemas,env,common}` 四块物理分目录；§2.2、§2.3、§3 与全文路径同步更新，ESLint 分层规则随之调整；新增 [04 · 代码地图](04-code-map.md) |
 
 ### 本次重写的选型变更
 

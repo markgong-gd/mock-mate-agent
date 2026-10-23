@@ -1,0 +1,6 @@
+/**
+ * @file 【后端·db】表结构汇总导出
+ * 做什么：drizzle-kit 从这里读取全部表定义生成迁移；新增表文件后要在这里 export。
+ */
+export * from './users';
+export * from './llm-calls';

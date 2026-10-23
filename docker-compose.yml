@@ -1,0 +1,39 @@
+name: mockmate # 项目名
+
+services:
+  db:
+    image: pgvector/pgvector:pg17 # 数据库镜像
+    restart: unless-stopped # 重启策略
+    environment:
+      POSTGRES_USER: mockmate
+      POSTGRES_PASSWORD: mockmate
+      POSTGRES_DB: mockmate
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes: # 数据卷
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mockmate -d mockmate']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # 可选：本地以生产镜像运行（档位 B），docker compose --profile app up -d --build
+  app:
+    profiles: ['app']
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: '7860'
+      DATABASE_URL: postgres://mockmate:mockmate@db:5432/mockmate
+      USE_EMBEDDED_PG: 'false'
+    ports:
+      - '7860:7860'
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
