@@ -66,11 +66,11 @@
 | P0 | 工程骨架与技术验证 | 7 | 5 | 🚧 |
 | P1 | C1 简历定制 | 13 | 13 | ✅ |
 | P2a | 题库检索 + C2 文字面试 | 10 | 10 | ✅ |
-| P2b | C3 诊断 | 6 | 0 | ⬜ |
+| P2b | C3 诊断 | 6 | 6 | ✅ |
 | P3 | 复训闭环 + 用量 + PII 脱敏 | 9 | 0 | ⬜ |
 | P4 | 语音面试 | 7 | 0 | ⬜ |
 | P5 | 评测与合规 | 8 | 0 | ⬜ |
-| **合计** | | **60** | **28** | |
+| **合计** | | **60** | **34** | |
 | 待补项 | 鉴权等（§9） | 7 | 0 | ⬜ |
 
 ---
@@ -146,12 +146,12 @@
 
 | 状态 | ID | 任务 | 验收标准 | 需求 | 学习点 |
 |---|---|---|---|---|---|
-| ⬜ | P2b-01 | Schema + 建表：`rubrics`（版本化）/ `diagnosis_reports`（`rubric_version`、`unique(session_id, rubric_version)`）/ `weaknesses` / `skill_score_history` | 迁移成功；**数据结构在本阶段定稿** | R-C3-1、R-C3-6 | — |
-| ⬜ | P2b-02 | Rubric v1（技术深度 / 结构化表达 / 岗位匹配度 / 沟通流畅度）seed；`domain.aggregate` | Rubric 入库；aggregate 有单测 | R-C3-1、R-C3-6 | — |
-| ⬜ | P2b-03 | `diagnosis` 图：load → `Send` 并行逐题打分 → aggregate → extract_weaknesses（附证据原话）→ plan_training → persist（单事务） | 输出通过 Zod 校验；每个短板都有证据；中途失败后从断点续跑 | R-C3-1、R-C3-2、R-C3-4 | `Send`、Reducer、map-reduce |
-| ⬜ | P2b-04 | `diagnose` 任务：finalize 入队、pg-boss 重试、`POST /api/reports/:id/retry` | 面试结束不阻塞页面；同一 session 不会重复诊断；最终失败可手动重试 | N-9、N-11 | — |
-| ⬜ | P2b-05 | 诊断报告页：雷达图 + 逐题点评 + 改进建议 + Rubric 版本（轮询生成状态） | 页面完整展示 | R-C3-3、R-C3-6 | — |
-| ⬜ | P2b-06 | 主链路集成测试：`app.request()` + 真实 Postgres + 假模型，覆盖“档案 → JD → 简历 → 面试 → 报告” | `pnpm test:integration` 通过 | — | 假模型测试 |
+| ✅ | P2b-01 | Schema + 建表：`rubrics`（版本化）/ `diagnosis_reports`（`rubric_version`、`unique(session_id, rubric_version)`）/ `weaknesses` / `skill_score_history` | 迁移成功；**数据结构在本阶段定稿** | R-C3-1、R-C3-6 | — (10-25) |
+| ✅ | P2b-02 | Rubric v1（技术深度 / 结构化表达 / 岗位匹配度 / 沟通流畅度）seed；`domain.aggregate` | Rubric 入库；aggregate 有单测 | R-C3-1、R-C3-6 | — (10-25) |
+| ✅ | P2b-03 | `diagnosis` 图：load → `Send` 并行逐题打分 → aggregate → extract_weaknesses（附证据原话）→ plan_training → persist（单事务） | 输出通过 Zod 校验；每个短板都有证据；中途失败后从断点续跑 | R-C3-1、R-C3-2、R-C3-4 | `Send`、Reducer、map-reduce (10-25) |
+| ✅ | P2b-04 | `diagnose` 任务：finalize 入队、pg-boss 重试、`POST /api/reports/:id/retry` | 面试结束不阻塞页面；同一 session 不会重复诊断；最终失败可手动重试 | N-9、N-11 | — (10-25) |
+| ✅ | P2b-05 | 诊断报告页：雷达图 + 逐题点评 + 改进建议 + Rubric 版本（轮询生成状态） | 页面完整展示 | R-C3-3、R-C3-6 | — (10-25) |
+| ✅ | P2b-06 | 主链路集成测试：`app.request()` + 真实 Postgres + 假模型，覆盖“档案 → JD → 简历 → 面试 → 报告” | `pnpm test:integration` 通过 | — | 假模型测试 (10-25) |
 
 ## P3 · 复训闭环 + 用量 + PII 脱敏（M3）
 
@@ -238,6 +238,7 @@
 | 2026-10-23 | **重写**：对齐 02 重写版（个人项目、单进程、LangGraph.js、模型注册表、pgvector 混合检索、魔搭部署）。投入改为 1 人、按人日估算；去掉归属列，新增学习点列；鉴权移入待补项（B-01）；合计 60 项 + 7 项待补 |
 | 2026-10-24 | P1（C1 简历定制）完成：同意 → 本地抽文本 → 抽取图 → 确认档案 → 向量化 → JD 匹配 → 简历图（检索 + guard）→ 流式预览 → 版本与打印。题库只写规范，不导入题目。P0-03 / P0-06 仍待真实 Key 与魔搭实测 |
 | 2026-10-25 | P2a（题库检索 + C2 文字面试）完成。检索决策：启用 pg_trgm 关键词召回与 RRF，不启用重排（02 §1.3）。创建面试只返回 id，第一题由 chat 拉起。诊断仍属 P2b |
+| 2026-10-25 | P2b（C3 诊断）完成。Rubric v1 以 `db/seeds/rubrics/*.json` 为源头、按 version 入库，报告记录所用版本；诊断图用 `Send` 并行逐题打分，`scores` 追加型 reducer 汇总，`thread = diag:<reportId>` 支持断点续跑；短板的 `turnId` 与原话由图回填校验（模型只给 `[T1]` 编号）；报告页雷达图手写 SVG，不新增图表依赖 |
 
 ### 本次重写的主要调整
 

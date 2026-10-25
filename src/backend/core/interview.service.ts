@@ -29,6 +29,7 @@ import { graphToUIStream } from '@/agent/graphs/stream';
 import type { RequestCtx } from '@/shared/common/ctx';
 import { AppError } from '@/shared/common/errors';
 import { newId } from '@/shared/common/ids';
+import { logger } from '@/shared/common/logger';
 import {
   INTERVIEW_LIMITS,
   type InterviewProgress,
@@ -36,6 +37,7 @@ import {
   type InterviewSummary,
   type InterviewView,
 } from '@/shared/schemas/interview';
+import { requestDiagnosis } from './diagnosis.service';
 import { createUsageHandler } from './usage';
 
 const LOCK_NS = 'mockmate:interview';
@@ -213,6 +215,20 @@ function replayStream(text: string, progress: InterviewProgress): ReadableStream
   });
 }
 
+/**
+ * 面试走到 finished 后触发诊断。建档 + 入队都是幂等的，
+ * 所以流式结束和 finish 按钮各调一次都安全；诊断自身出错不影响这次请求。
+ */
+async function diagnoseWhenFinished(ctx: RequestCtx, sessionId: string) {
+  try {
+    const session = await getInterviewSession(ctx.userId, sessionId);
+    if (session?.status !== 'finished') return;
+    await requestDiagnosis(ctx, sessionId);
+  } catch (error) {
+    logger.error({ err: error, sessionId, requestId: ctx.requestId }, 'request diagnosis failed');
+  }
+}
+
 export async function streamInterviewChat(
   ctx: RequestCtx,
   input: { sessionId: string; answer: string; idempotencyKey?: string; signal?: AbortSignal },
@@ -311,6 +327,9 @@ async function openChatStream(
         transient: true,
       });
     },
+    onFinish: async () => {
+      await diagnoseWhenFinished(ctx, session.id);
+    },
   });
 }
 
@@ -349,7 +368,9 @@ export async function finishInterview(ctx: RequestCtx, sessionId: string): Promi
         await setInterviewStatus(ctx.userId, sessionId, 'finished');
       }
     }
-    return await getInterview(ctx, sessionId);
+    const view = await getInterview(ctx, sessionId);
+    await diagnoseWhenFinished(ctx, sessionId);
+    return view;
   } finally {
     await release();
   }

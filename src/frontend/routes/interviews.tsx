@@ -20,6 +20,7 @@ import {
   useInterviews,
 } from '@/frontend/features/interview/queries';
 import { createInterviewTransport } from '@/frontend/features/interview/transport';
+import { useSessionReport } from '@/frontend/features/reports/queries';
 import { ApiClientError, parseStreamError } from '@/frontend/lib/api';
 import { cn } from '@/frontend/lib/utils';
 import {
@@ -279,6 +280,9 @@ function InterviewChat({ interview }: { interview: InterviewView }) {
   const showContinue = !finished && !waiting && !showStart && messages.at(-1)?.role === 'user' && !busy;
   const streamErr = parseStreamError(error);
   const questionNo = Math.min(liveProgress.cursor + 1, Math.max(liveProgress.total, 1));
+  // 结束后诊断在后台跑，报告建好才出链接
+  const report = useSessionReport(interview.id, finished);
+  const reportId = report.data?.reports[0]?.id;
 
   const submit = () => {
     const text = input.trim();
@@ -318,6 +322,17 @@ function InterviewChat({ interview }: { interview: InterviewView }) {
             结束面试
           </Button>
         )}
+        {finished &&
+          (reportId ? (
+            <Button size="sm" asChild>
+              <Link to={`/reports/${reportId}`}>查看诊断报告</Link>
+            </Button>
+          ) : (
+            <span className="text-muted-foreground flex items-center gap-2 text-sm">
+              <Loader2 className="size-4 animate-spin" />
+              诊断报告生成中
+            </span>
+          ))}
       </div>
       <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
         <Card className="min-h-[480px]">

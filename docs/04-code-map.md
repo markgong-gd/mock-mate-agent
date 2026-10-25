@@ -52,7 +52,7 @@ mock-mate-agent/
 │   │   ├── prompts/         Prompt 文本（带版本号）
 │   │   ├── tools/       ○   LLM 可调用的只读工具            (P2a 起)
 │   │   ├── retrieval/       事实检索、题库检索（关键词 + RRF，不重排）
-│   │   ├── rubrics/     ○   评分标准定义                     (P2b 起)
+│   │   ├── rubrics/         评分标准 → 提示词文本（定义本身在 db/seeds/rubrics/）
 │   │   └── voice/       ○   语音 ASR/TTS 适配                (P4 起)
 │   │
 │   └── shared/          【公共底座】
@@ -125,14 +125,17 @@ shared/domain   -> shared/schemas                          零 IO、零三方 SD
 | `db/migrations/0000_extensions.sql` | 启用 `vector`、`pg_trgm` 扩展 |
 | `db/migrations/0001_init.sql` | 建 `users`、`llm_calls` 表 |
 | `db/migrations/0002_confused_meteorite.sql` | C1 业务表：profiles / experiences / facts（含 1024 维向量与 HNSW）/ skills / job_targets / job_requirements / resumes / consents。文件名由 drizzle-kit 生成，不要手改 |
+| `db/migrations/0003_chief_sinister_six.sql` | C2 表：questions（向量 / GIN / trgm 索引）、interview_sessions、interview_turns |
+| `db/migrations/0004_burly_wallow.sql` | C3 表：rubrics、diagnosis_reports（`unique(session_id, rubric_version)`）、weaknesses、skill_score_history |
 | `db/seeds/questions/README.md` | 题库字段、技能标签、难度、题型、版权和 JSONL 样例 |
 | `db/migrations/meta/*` | drizzle-kit 快照与日志，自动维护，勿手改 |
 | `db/seeds/questions/frontend.jsonl` | 初版前端题库（216 题）。`pnpm db:seed` 幂等导入并补向量 |
-| `db/seeds/rubrics/` | 评分标准种子数据（P2b 填充） |
+| `db/seeds/rubrics/v1.json` | Rubric v1 定义（4 个维度 + 权重 + 锚点）。改标准要新建版本，见同目录 README |
 | `tests/helpers/env.ts` | 测试工具：注入测试环境变量（fake 模型）、读取整条流 |
 | `tests/integration/p0.test.ts` | 集成测试：迁移、readyz、用量入库、"中断 → 模拟进程重启 → 恢复" |
 | `tests/integration/p1.test.ts` | 集成测试：未同意 403、抽取不含手机号、保存后有向量、JD 缺口、简历导出、编造引用 409、检索不跨用户 |
 | `tests/integration/p2a.test.ts` | 集成测试：题库 recall@5、向量化可续跑、追问、幂等、并发 409、重启后续跑 |
+| `tests/integration/p2b.test.ts` | 集成测试（主链路）：档案 → JD → 简历 → 面试 → 报告；诊断幂等、短板证据可核对、打分失败后手动重试续跑 |
 | `deploy/modelscope/entrypoint.sh` | 容器启动：初始化并启动内置 PG → 启动 Node → SIGTERM 时先停 Node 再停 PG |
 | `docs/01~04` | 需求 / 架构 / 计划 / 本文 |
 | `public/favicon.svg` | 静态资源 |
@@ -160,6 +163,8 @@ frontend/
 │   ├── resumes.tsx         useObject 消费生成流，边生成边预览
 │   ├── resume-editor.tsx   改某一版；保存写成新版本
 │   ├── resume-print.tsx    打印页；未溯源时后端 409
+│   ├── interviews.tsx      面试设置 + 对话（useChat）；结束后给出报告入口
+│   ├── reports.tsx         报告列表 + 详情：雷达图、逐题点评、短板证据、复训计划、Rubric
 │   ├── placeholder.tsx     未上线页面占位
 │   └── not-found.tsx     404
 ├── features/<领域>/      按业务领域组织的数据 hooks 与业务组件
@@ -167,7 +172,9 @@ frontend/
 │   ├── dev-echo/queries.ts   useEchoThread（从存档恢复对话）
 │   ├── profile/              同意、抽取、保存档案
 │   ├── jobs/                 岗位列表与 skillGap 展示
-│   └── resumes/              版本列表、预览；生成本身用 useObject，不走 Query
+│   ├── resumes/              版本列表、预览；生成本身用 useObject，不走 Query
+│   ├── interview/            场次列表、创建、结束；对话本身用 useChat + transport
+│   └── reports/              报告列表与详情（生成中按 2 秒轮询）+ 手写 SVG 雷达图
 ├── components/ui/        shadcn 基础组件：button / card / badge / textarea / input
 └── lib/
     ├── api.ts            hc<AppType> 类型安全客户端 + unwrap + ApiClientError + parseStreamError
@@ -205,6 +212,8 @@ frontend/
 | `routes/meta.ts` | `GET /api/meta`（开发路由 / 口令是否开启、模型别名） |
 | `routes/access.ts` | `/api/access/status｜login｜logout` |
 | `routes/llm.ts` | `GET /api/llm/ping?alias=chat` |
+| `routes/interviews.ts` | `/api/interviews`（列表、创建、`:id`、`:id/chat` 流式、`:id/finish`） |
+| `routes/reports.ts` | `/api/reports`（列表，可带 `?sessionId=`）、`/api/reports/:id`、`/api/reports/:id/retry` |
 | `routes/dev.ts` | `/api/dev/echo/:threadId`（GET 恢复，POST `/chat` 流式）、存档查看、Mermaid |
 
 **路由文件的标准写法只有三步**：
@@ -225,11 +234,12 @@ validate(入参) → 调 core 的函数(toCtx(c), input) → c.json(...) 或返�
 | `health.service.ts` | `checkReady`：检查 DB |
 | `usage.ts` | `createUsageHandler`：把 `agent/llm` 的用量回调接到 `backend/db` 的写库函数 |
 | `backup.service.ts` | `runBackup`：`pg_dump`，保留最近 N 份 |
-| `interview.service.ts` | 文字面试：创建、advisory lock、先写回答再推进图、结束 |
+| `interview.service.ts` | 文字面试：创建、advisory lock、先写回答再推进图、结束；场次变成 finished 后触发诊断 |
+| `diagnosis.service.ts` | C3 诊断：幂等建档 + 入队、跑诊断图（断点续跑）、报告视图、手动重试；报告状态只在这里改 |
 | `question-embed.service.ts` | 题库向量化。只补 embedding 为空或模型不一致的行 |
-| `seed-cli.ts` | `pnpm db:seed`：导入 JSONL 再向量化 |
+| `seed-cli.ts` | `pnpm db:seed`：导入 Rubric 与题库 JSONL，再补算题目向量 |
 
-**应该放什么**：每个业务一个 `xxx.service.ts`（未来有 `profile`、`job`、`resume`、`interview`、`diagnosis`、`training`、`privacy`）。所有函数的第一个参数都是 `ctx: RequestCtx`。这一层负责权限、事务、幂等、加锁、调图、入队、写库。
+**应该放什么**：每个业务一个 `xxx.service.ts`（未来还有 `training`、`privacy`）。所有函数的第一个参数都是 `ctx: RequestCtx`。这一层负责权限、事务、幂等、加锁、调图、入队、写库。
 
 ### 2.6 `src/backend/db/`：数据访问
 
@@ -237,9 +247,10 @@ validate(入参) → 调 core 的函数(toCtx(c), input) → c.json(...) 或返�
 |---|---|
 | `client.ts` | 唯一的 `pg.Pool`（Drizzle 与 PostgresSaver 共用）、`getDb` / `pingDb` / `closePool` |
 | `migrate.ts` / `migrate-cli.ts` | 持 advisory lock 执行迁移 / `pnpm db:migrate` 入口 |
-| `schema/index.ts` | 汇总导出所有表 |
-| `schema/users.ts`、`schema/llm-calls.ts` | 表定义 |
-| `repos/users.ts`、`repos/llm-calls.ts` | 查询函数；**每个方法必须带 `userId`** |
+| `schema/index.ts` | 汇总导出所有表（drizzle-kit 只读这里，新增表文件必须在此 `export *`） |
+| `schema/*.ts` | 按领域拆的表定义：`users` / `llm-calls` / `profile` / `job` / `resume` / `consent` / `question` / `interview` / `diagnosis` |
+| `repos/*.ts` | 查询函数；**每个方法必须带 `userId`**（`questions`、`rubrics` 是全局表，例外） |
+| `seed-questions.ts` / `seed-rubrics.ts` | 读 `db/seeds/**`，按 Zod 校验后幂等 upsert |
 
 ### 2.7 `src/backend/jobs/`：后台任务
 
@@ -248,7 +259,10 @@ validate(入参) → 调 core 的函数(toCtx(c), input) → c.json(...) 或返�
 | `index.ts` | `registerJobs(boss)`：注册所有队列，由 `core/runtime.ts` 调用 |
 | `backup.ts` | `backup` 队列：handler 只调 `core/backup.service`，按 cron 定时 |
 
-`embed-facts.ts` 在档案保存后向量化。`embed-questions.ts` 补题库向量，启动时也会入队一次。以后还有 `diagnose.ts`（P2b）。
+`embed-facts.ts` 在档案保存后向量化。`embed-questions.ts` 补题库向量，启动时也会入队一次。
+`diagnose.ts` 在面试结束后跑诊断图（`singletonKey = reportId`，`retryLimit: 3`）；用尽重试后报告停在 `failed`，用户可在报告页手动重试。
+
+**core 不直接依赖 jobs**：`core/*.service.ts` 导出 `setXxxSender()`，由 `core/runtime.ts` 在 pg-boss 起来后注入入队函数；没注入时（seed 命令、集成测试）就在当前进程跑完。
 
 ---
 
@@ -261,8 +275,10 @@ validate(入参) → 调 core 的函数(toCtx(c), input) → c.json(...) 或返�
 | `stream.ts` | `graphToUIStream()`：LangGraph 流 → AI SDK UI Message Stream（前后端协议翻译器） |
 | `echo/state.ts` | 回声图状态：`messages` / `round` / `maxRounds` / `status` |
 | `echo/graph.ts` | 节点 `ask` / `wait_answer`(interrupt) / `reply` / `finish` + 边 + compile |
+| `interview/` | 文字面试图：`plan_questions` / `ask` / `wait_answer`(interrupt) / `evaluate` / `finalize` |
+| `diagnosis/` | 诊断图：`load` → `Send` 并行 `score_answer` → `aggregate` → `extract_weaknesses` → `plan_training` → `persist` |
 
-**一张图的标准结构**（未来 `interview/`、`diagnosis/`、`resume/` 都照此）：
+**一张图的标准结构**：
 
 ```text
 agent/graphs/<图名>/
@@ -270,6 +286,9 @@ agent/graphs/<图名>/
 ├── graph.ts      addNode / addEdge / addConditionalEdges(调 shared/domain 纯函数) / compile
 └── nodes/*.ts    节点多时拆出；节点内调 agent/llm、agent/retrieval、agent/tools、backend/db/repos
 ```
+
+**map-reduce（diagnosis）**：条件边返回 `Send[]` 扇出，并行节点用 `addNode(key, fn, { input: XxxState })` 声明自己的入参结构。
+入参字段名不能与主状态重名（同名 channel 的类型必须完全一致），结果汇总靠主状态里的追加型 reducer。
 
 ### 2.9 `src/agent/llm/`：模型网关
 
@@ -283,11 +302,14 @@ agent/graphs/<图名>/
 | `structured.ts` | `generateStructured(alias, zodSchema, messages)`：选方式 → 校验 → 修复重试 → fallback |
 | `usage.ts` | `UsageCallbackHandler`：产出用量记录（写库函数由 core 注入） |
 
-### 2.10 `src/agent/prompts/`
+### 2.10 `src/agent/prompts/`、`src/agent/rubrics/`
 
 | 文件 | 做什么 |
 |---|---|
-| `dev-echo.ts` | 回声图的 system prompt 与 `ECHO_PROMPT_VERSION`（写入 `llm_calls.prompt_version`） |
+| `prompts/dev-echo.ts` | 回声图的 system prompt 与 `ECHO_PROMPT_VERSION`（写入 `llm_calls.prompt_version`） |
+| `prompts/interview.ts` | 面试提问与回答评估；第一行 `TASK:` 给离线假模型分流 |
+| `prompts/diagnosis.ts` | 逐题打分、短板提取、复训计划；短板只允许引用 `[T1]` 编号，不让模型给 turnId |
+| `rubrics/v1.ts` | 把 Rubric 定义渲染成提示词文本与维度 key 列表（定义本身在 `db/seeds/rubrics/`，运行时从 `rubrics` 表读） |
 
 ---
 
@@ -304,7 +326,8 @@ agent/graphs/<图名>/
 | `common/ids.ts` | `newId()`、`hashUserId()`（日志不出现明文 userId） |
 | `common/logger.ts` | pino 根 logger（不记正文与 PII） |
 
-未来 `shared/domain/` 会有 `interview/route.ts`、`interview/allocate.ts`、`resume/fact-ref-guard.ts`、`diagnosis/aggregate.ts`、`weakness/merge.ts`、`matching/skill-gap.ts`；`shared/schemas/` 会有各领域的 Zod 定义。
+`shared/domain/` 现有 `interview/{route,allocate}.ts`、`resume/fact-ref-guard.ts`、`diagnosis/aggregate.ts`、`matching/skill-gap.ts`、`retrieval/{rrf,overlap,recall}.ts`，P3 再加 `weakness/merge.ts`；
+`shared/schemas/` 按领域放 Zod 定义（`profile` / `job` / `resume` / `interview` / `question` / `rubric` / `diagnosis` / `weakness` / `skill-tags`）。
 
 ---
 
@@ -445,7 +468,7 @@ frontend/routes/home.tsx                点击 Ping
  ③ 刷新页面 / 重启后端进程 → 回到 ①，从存档恢复，可继续答题
 ```
 
-### 4.3 回声图 vs 未来面试图
+### 4.3 回声图 vs 面试图
 
 ```text
    echo 图                                  interview 图
@@ -472,10 +495,43 @@ frontend/routes/home.tsx                点击 Ping
          |  finish  |                     ---------------+----+-----+
          +----+-----+                                    v
               v                                   +------------+
-             END                                  |  finalize  | P2a 只标结束；诊断入队是 P2b
+             END                                  |  finalize  | 只把场次标成 finished
                                                   +-----+------+
                                                         v
                                                        END
+```
+
+### 4.3.1 诊断图（map-reduce）
+
+```text
+   START
+     v
+ +--------+   读报告 + rubrics[报告记录的版本] + turns + 题库题干
+ |  load  |   顺手把 scores 清空（重新诊断不叠加）
+ +---+----+
+     | 条件边 fanOut：有回答 → Send 每题一个；没有 → 直连 aggregate
+     v
+ +------------------------------------------+
+ | score_answer | score_answer | score_... |  并行，judge 模型，各写一条
+ +------------------------------------------+
+     v  追加型 reducer 汇总 scores[]
+ +-----------+  domain.aggregate：维度分 / 总分 / 技能分（不调模型）
+ | aggregate |
+ +-----+-----+
+       v
+ +--------------------+  模型只给 [T1] 编号 → 图回填 turnId、校验原话
+ | extract_weaknesses |  编号对不上就丢掉：每条短板都有可核对的证据
+ +---------+----------+
+           v
+ +---------------+  只保留已确认短板的条目
+ | plan_training |
+ +-------+-------+
+         v
+ +-----------+  单事务：report(done) / weaknesses / skill_score_history
+ |  persist  |
+ +-----+-----+
+       v
+      END     失败 → status = failed + error；thread = diag:<reportId>，重试从断点续跑
 ```
 
 ### 4.4 以后加业务时三块怎么扩展
@@ -493,9 +549,9 @@ frontend/routes/home.tsx                点击 Ping
  routes/interviews.tsx  ──>     server/routes/interviews.ts             ──> graphs/interview (照 echo 扩展)
    useChat 流式                   → core/interview.service                  + retrieval/question-retriever
                                     （加锁、幂等、先写回答再调图）          + shared/domain/interview/route|allocate
-                                    finalize → jobs/diagnose 入队                   │
+                                    finished → core/diagnosis 建档入队               │
  routes/reports.tsx     ──>     server/routes/reports.ts                ──> graphs/diagnosis (Send 并行)
-   轮询状态                       ← jobs/diagnose → core/diagnosis.service   + rubrics/v1 + shared/domain/aggregate
+   轮询状态 / 重试                ← jobs/diagnose → core/diagnosis.service   + rubrics/v1 + shared/domain/diagnosis/aggregate
 
  共同依赖：shared/schemas（Zod）  backend/db（业务表）  agent/llm（模型）  shared/common（错误 / 日志 / ctx）
 ```

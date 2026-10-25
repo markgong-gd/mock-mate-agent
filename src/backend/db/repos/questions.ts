@@ -2,7 +2,7 @@
  * @file 【后端·db】题库仓储
  * 题目是全局数据，没有 user_id。导入按 id upsert；正文变了才清空向量，这样重复 seed 不会把已经算好的向量丢掉。
  */
-import { and, asc, eq, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { QuestionSeed } from '@/shared/schemas/question';
 import { getDb } from '../client';
 import { questions } from '../schema';
@@ -78,6 +78,28 @@ export async function writeQuestionEmbedding(input: { id: string; embedding: num
         ),
       ),
     );
+}
+
+export interface QuestionBrief {
+  id: string;
+  content: string;
+  answerPoints: string[];
+  skillTags: string[];
+}
+
+/** 诊断逐题打分要题干和参考要点。按 id 一次取回，返回 Map 便于配对 */
+export async function getQuestionsByIds(ids: readonly string[]): Promise<Map<string, QuestionBrief>> {
+  if (ids.length === 0) return new Map();
+  const rows = await getDb()
+    .select({
+      id: questions.id,
+      content: questions.content,
+      answerPoints: questions.answerPoints,
+      skillTags: questions.skillTags,
+    })
+    .from(questions)
+    .where(inArray(questions.id, [...new Set(ids)]));
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 export async function countQuestions(): Promise<number> {

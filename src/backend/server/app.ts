@@ -19,6 +19,7 @@ import { jobRoutes } from './routes/jobs';
 import { llmRoutes } from './routes/llm';
 import { metaRoutes } from './routes/meta';
 import { profileRoutes } from './routes/profile';
+import { reportRoutes } from './routes/reports';
 import { resumeRoutes } from './routes/resumes';
 import type { AppEnv } from './types';
 
@@ -45,6 +46,7 @@ const apiRoutes = (cfg: AppConfig) =>
     .route('/jobs', jobRoutes())
     .route('/resumes', resumeRoutes())
     .route('/interviews', interviewRoutes())
+    .route('/reports', reportRoutes())
     .route('/dev', devRoutes(cfg.enableDevRoutes));
 
 /**

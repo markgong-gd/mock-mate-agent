@@ -10,9 +10,11 @@ import { ensureUser } from '@/backend/db/repos/users';
 import { serverEnv } from '@/shared/env/server';
 import { setupCheckpointer } from '@/agent/graphs/checkpointer';
 import { registerJobs } from '@/backend/jobs';
+import { enqueueDiagnose } from '@/backend/jobs/diagnose';
 import { enqueueEmbedFacts } from '@/backend/jobs/embed-facts';
 import { enqueueEmbedQuestions } from '@/backend/jobs/embed-questions';
 import { setEmbedFactsSender } from '@/backend/core/embed.service';
+import { setDiagnoseSender } from '@/backend/core/diagnosis.service';
 import { requestEmbedQuestions, setEmbedQuestionsSender } from '@/backend/core/question-embed.service';
 import { setBoss } from '@/backend/jobs/boss';
 import { assertRegistry } from '@/agent/llm/registry';
@@ -48,6 +50,9 @@ export async function startRuntime() {
   });
   setEmbedQuestionsSender(async () => {
     await enqueueEmbedQuestions(running);
+  });
+  setDiagnoseSender(async (input) => {
+    await enqueueDiagnose(running, input);
   });
   await registerJobs(boss, { backup: { cron: env.backup.cron, enabled: Boolean(env.backup.dir) } });
   await requestEmbedQuestions();

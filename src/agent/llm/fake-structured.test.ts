@@ -3,12 +3,35 @@
  */
 import { describe, expect, it } from 'vitest';
 import { factRefGuard } from '@/shared/domain/resume/fact-ref-guard';
+import { answerScoreSchema, trainingPlanSchema } from '@/shared/schemas/diagnosis';
 import { jobExtractOutputSchema } from '@/shared/schemas/job';
 import { profileExtractOutputSchema } from '@/shared/schemas/profile';
 import { resumeContentSchema } from '@/shared/schemas/resume';
+import { weaknessExtractOutputSchema } from '@/shared/schemas/weakness';
 import { fakeStructuredReply } from './fake-structured';
 
 const FACT = '11111111-1111-4111-8111-111111111111';
+
+const scorePrompt = (answer: string) =>
+  [
+    'TASK: diagnosis.score',
+    'DIMENSIONS:',
+    'tech_depth\nstructure\njob_fit\ncommunication',
+    'END_DIMENSIONS',
+    'QUESTION:\nReact 的 key 为什么要稳定？\nEND_QUESTION',
+    `ANSWER:\n${answer}\nEND_ANSWER`,
+  ].join('\n');
+
+const weaknessPrompt = [
+  'TASK: diagnosis.weakness',
+  'TAGS:',
+  'react\nperformance',
+  'END_TAGS',
+  'TRANSCRIPT:',
+  '[T1] 题：key 为什么要稳定？ ｜ 答：不知道',
+  '[T2] 题：首屏变慢先看什么？ ｜ 答：我先看 LCP 和接口耗时，再决定加缓存还是拆包。',
+  'END_TRANSCRIPT',
+].join('\n');
 
 describe('fakeStructuredReply', () => {
   it('档案抽取草稿通过 Zod，且不回写手机号', () => {
@@ -23,7 +46,9 @@ describe('fakeStructuredReply', () => {
   });
 
   it('JD 抽取能认出目录内技能', () => {
-    const raw = fakeStructuredReply('TASK: job.extract\n<<<DATA\n高级前端\n要求熟悉 TypeScript 与 React\nDATA');
+    const raw = fakeStructuredReply(
+      'TASK: job.extract\n<<<DATA\n高级前端\n要求熟悉 TypeScript 与 React\nDATA',
+    );
     const parsed = jobExtractOutputSchema.parse(JSON.parse(raw!));
     expect(parsed.requirements.map((r) => r.tag)).toEqual(expect.arrayContaining(['typescript', 'react']));
   });
@@ -35,6 +60,48 @@ describe('fakeStructuredReply', () => {
     const statuses = guarded.content.sections[0]?.bullets.map((b) => b.status);
     expect(statuses).toContain('verified');
     expect(statuses).toContain('unverified');
+  });
+
+  it('诊断打分只输出 DIMENSIONS 里的 key，具体回答分数更高', () => {
+    const vague = answerScoreSchema.parse(JSON.parse(fakeStructuredReply(scorePrompt('不知道'))!));
+    const deep = answerScoreSchema.parse(
+      JSON.parse(
+        fakeStructuredReply(
+          scorePrompt('我把 key 换成稳定的业务 id，插入排序后行状态不会串，也补了回归用例。'),
+        )!,
+      ),
+    );
+    expect(vague.dimensions.map((d) => d.key)).toEqual([
+      'tech_depth',
+      'structure',
+      'job_fit',
+      'communication',
+    ]);
+    expect(deep.dimensions[0]!.score).toBeGreaterThan(vague.dimensions[0]!.score);
+    expect(vague.gap.length).toBeGreaterThan(0);
+  });
+
+  it('短板草稿的 tag 取自 TAGS，证据引用 TRANSCRIPT 里的编号和原话', () => {
+    const parsed = weaknessExtractOutputSchema.parse(JSON.parse(fakeStructuredReply(weaknessPrompt)!));
+    expect(parsed.weaknesses.length).toBeGreaterThan(0);
+    for (const item of parsed.weaknesses) {
+      expect(['react', 'performance']).toContain(item.tag);
+      expect(['T1', 'T2']).toContain(item.evidenceRef);
+    }
+    expect(parsed.weaknesses[0]!.evidenceQuote).toBe('不知道');
+  });
+
+  it('复训计划只覆盖 WEAKNESSES 里的技能；没有短板时为空', () => {
+    const withItems = trainingPlanSchema.parse(
+      JSON.parse(
+        fakeStructuredReply('TASK: diagnosis.plan\nWEAKNESSES:\n- [react] 标题：说明\nEND_WEAKNESSES')!,
+      ),
+    );
+    expect(withItems.items.map((item) => item.tag)).toEqual(['react']);
+    const empty = trainingPlanSchema.parse(
+      JSON.parse(fakeStructuredReply('TASK: diagnosis.plan\nWEAKNESSES:\n- （无）\nEND_WEAKNESSES')!),
+    );
+    expect(empty.items).toEqual([]);
   });
 
   it('普通对话不拦截', () => {

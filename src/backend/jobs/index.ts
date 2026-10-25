@@ -5,6 +5,7 @@
  */
 import type { PgBoss } from 'pg-boss';
 import { registerBackupJob } from './backup';
+import { registerDiagnoseJob } from './diagnose';
 import { registerEmbedFactsJob } from './embed-facts';
 import { registerEmbedQuestionsJob } from './embed-questions';
 
@@ -17,6 +18,7 @@ export async function registerJobs(boss: PgBoss, opts: JobsOptions) {
   await registerBackupJob(boss, opts.backup);
   await registerEmbedFactsJob(boss);
   await registerEmbedQuestionsJob(boss);
+  await registerDiagnoseJob(boss);
 }
 
 export { BACKUP_QUEUE } from './backup';

@@ -29,6 +29,13 @@
       "when": 1792904995213,
       "tag": "0003_chief_sinister_six",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792929826958,
+      "tag": "0004_burly_wallow",
+      "breakpoints": true
     }
   ]
 }

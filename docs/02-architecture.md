@@ -312,7 +312,7 @@ mock-mate-agent/
 | JD | `POST /api/jobs`、`GET /api/jobs/:id`（含匹配与缺口） |
 | 简历 | `POST /api/resumes/generate`（流式）、`GET / PUT /api/resumes/:id`、`GET /api/resumes/:id/export` |
 | 面试 | `POST /api/interviews`（流式，返回首题）、`GET /api/interviews/:id`、`POST /api/interviews/:id/chat`（流式）、`POST /api/interviews/:id/finish` |
-| 诊断 | `GET /api/reports/:id`、`POST /api/reports/:id/retry` |
+| 诊断 | `GET /api/reports`（可带 `?sessionId=`）、`GET /api/reports/:id`、`POST /api/reports/:id/retry` |
 | 训练 / 成长 | `POST /api/training`（专项训练）、`GET /api/growth` |
 | 用量 | `GET /api/usage/sessions/:id` |
 | 隐私 | `DELETE /api/privacy/me` |
@@ -607,25 +607,32 @@ POST /api/interviews/:id/finish 停在 wait_answer 时 resume { abort: true }；
 ### 6.5 C3 诊断图
 
 ```text
-finalize
-  -> diagnosis_reports(status = pending, unique(session_id, rubric_version))   # 幂等
-  -> pg-boss 入队 diagnose { reportId }
-        -> jobs/diagnose -> core.diagnosis.run(reportId)
-           -> diagnosis 图 (thread = diag:<reportId>，失败后从断点续跑)
+面试走到 finished（chat 流结束 或 POST /finish）
+  -> core.diagnosis.requestDiagnosis(sessionId)
+       diagnosis_reports(status = pending, unique(session_id, rubric_version))  # 幂等建档
+       -> pg-boss 入队 diagnose { userId, reportId }（singletonKey = reportId）
+     触发失败只记日志，不影响面试请求本身
+        -> jobs/diagnose -> core.diagnosis.runDiagnosis(reportId)
+           status = running
+           -> diagnosis 图 (thread = diag:<reportId>，停在某节点时从断点续跑)
 
-  START -> load(turns + rubric)
-        -> fan_out: Send("score_question", 每题一个)        # 并行
-        -> score_question (judge 模型) -> scores[]           # Reducer 追加
-        -> aggregate (domain.aggregate：维度分 / 总分)
-        -> extract_weaknesses (每条 evidence = turnId + 原话)
-        -> plan_training (复训计划)
-        -> persist (单事务：report / weaknesses(domain.merge) / skill_score_history)
+  START -> load(报告 + rubrics[report.rubric_version] + turns + 题库题干)
+        -> 条件边 fan_out: Send("score_answer", 每题一个)   # 并行；没有可打分的回答时直连 aggregate
+        -> score_answer (judge 模型) -> scores[]            # 追加型 Reducer 汇总
+        -> aggregate (domain.aggregate：维度分 / 总分 / 技能分，不调模型)
+        -> extract_weaknesses (judge 模型只给 [T1] 编号，图回填 turnId 并校验原话)
+        -> plan_training (复训计划，只保留已确认短板的条目)
+        -> persist (单事务：report(status = done) / weaknesses / skill_score_history)
         -> END
-  -> status = done | failed（pg-boss 重试；最终 failed 可手动重试）
+  -> 失败 status = failed + error（pg-boss 重试；最终失败可手动重试）
 
-前端: GET /api/reports/:id 轮询状态
-下次面试开场: tools.getOpenWeaknesses -> plan_questions 优先召回短板相关题
+前端: GET /api/reports/:id 轮询状态；POST /api/reports/:id/retry 手动重试
+下次面试开场: tools.getOpenWeaknesses -> plan_questions 优先召回短板相关题（P3）
 ```
+
+- **Rubric 版本化**（R-C3-6）：定义的源头是 `db/seeds/rubrics/<version>.json`，`pnpm db:seed` 校验后 upsert 进 `rubrics`（同一时间只有一个 `active`）。新报告用当前 `active` 版本，旧报告按自己记录的 `rubric_version` 读定义，所以改标准必须新建版本而不是原地改。
+- **证据不可编造**（R-C3-2）：Prompt 里把轮次编号成 `[T1] 题：… ｜ 答：…`，模型只能引用编号；编号对不上的短板直接丢弃，原话不在该轮回答里时换成真实摘录。
+- **重新诊断不叠加**：`scores` 是唯一的追加型字段，`load` 返回空数组把它清空（LangGraph 里收到空数组即重置），所以同一个 thread 重跑不会把分数累加。
 
 ### 6.6 记忆分层
 
@@ -732,13 +739,16 @@ db/seeds/questions/*.jsonl --pnpm db:seed--> questions（幂等 upsert，embeddi
 
 ```text
 users 1──1 profiles 1──* experiences 1──* facts (embedding)
-                    1──* skills ──* skill_score_history *──1 interview_sessions
-                    1──* weaknesses ──(evidence)──> interview_turns
+                    1──* skills
 users 1──* job_targets 1──* job_requirements
 job_targets 1──* resumes              (version, content jsonb 内含 factRefs, template)
 job_targets 1──* interview_sessions   (mode text|voice, kind normal|drill, settings, status)
 interview_sessions 1──* interview_turns   (seq, role, content, question_id, is_follow_up, idempotency_key)
-interview_sessions 1──1 diagnosis_reports (rubric_version, scores jsonb, plan jsonb, status)
+interview_sessions 1──1 diagnosis_reports (rubric_version, status, overall, scores jsonb, plan jsonb)
+                                          unique(session_id, rubric_version)
+diagnosis_reports 1──* weaknesses          (tag, severity, status, evidence_quote)
+                                           evidence_turn_id ──> interview_turns
+diagnosis_reports 1──* skill_score_history (tag, score, sample_count)  # 成长曲线按 (user_id, tag, created_at)
 users 1──* llm_calls                  (session_id, function_id, model, tokens, latency, status)
 users 1──* consents                   (purpose, version, granted_at)
 
@@ -1081,6 +1091,7 @@ export interface ApiError {
 | 2026-10-23 | 目录重组：`src/` 按 `frontend` / `backend/{server,core,db,jobs}` / `agent/{graphs,llm,prompts,...}` / `shared/{domain,schemas,env,common}` 四块物理分目录；§2.2、§2.3、§3 与全文路径同步更新，ESLint 分层规则随之调整；新增 [04 · 代码地图](04-code-map.md) |
 | 2026-10-24 | P1-08：向量列固定 1024 维；默认同进程 n-gram 哈希（`fake:ngram-1024`），换 bge-m3 只改 `MODEL_EMBED` 并按 `embed_model` 重嵌。简历生成用 `streamMode: "custom"` 吐 JSON 文本（`text/plain`），前端 `useObject` 边解析边渲染；回声图仍走 UI Message Stream |
 | 2026-10-25 | P2a：题库表、面试会话与轮次、216 道前端题、`embed-questions`、QuestionRetriever（关键词 + RRF，不重排）。面试图 plan → ask → wait_answer → evaluate → 追问/下一题/结束。创建面试只返回 id，第一题由随后的 chat 拉起。finalize 只把场次标成 finished，诊断留到 P2b |
+| 2026-10-25 | P2b：Rubric 版本化（源头 `db/seeds/rubrics/*.json` → `rubrics` 表，报告记录所用版本）、`diagnosis_reports` / `weaknesses` / `skill_score_history` 建表定稿。诊断图用 `Send` 并行逐题打分 + 追加型 Reducer 汇总，`thread = diag:<reportId>`；短板证据由图回填校验（模型只给 `[T1]` 编号）。触发点由 finalize 节点调整为 `core.interview` 在场次变成 finished 后触发（`agent/graphs` 不允许依赖 `backend/core`），`agent/rubrics` 只负责把定义渲染成提示词文本。报告页雷达图手写 SVG，不引图表库 |
 
 ### 本次重写的选型变更
 
