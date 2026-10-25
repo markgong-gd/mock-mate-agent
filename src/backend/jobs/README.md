@@ -4,6 +4,8 @@
 |---|---|
 | `index.ts` | registerJobs(boss)：注册全部队列，由 core/runtime 启动时调用 |
 | `backup.ts` | backup 队列：按 BACKUP_CRON 调 core/backup.service |
+| `embed-facts.ts` | embed-facts 队列：保存档案后按用户向量化，handler 只调 `embedFactsForUser` |
+| `boss.ts` | 进程里的 pg-boss 实例。core 入队时用它，避免 jobs 和 embed 服务循环引用 |
 
-未来：`diagnose.ts`（面试结束后异步诊断）、`embed-questions.ts`、`embed-facts.ts`。
+以后：`diagnose.ts`（面试结束后异步诊断）、`embed-questions.ts`。
 **规则**：handler 只调 `@/backend/core/*`，不直接写业务逻辑。

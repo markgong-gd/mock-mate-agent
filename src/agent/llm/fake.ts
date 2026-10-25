@@ -1,11 +1,12 @@
 /**
  * @file 【智能体·llm】离线假模型（provider kind = fake）
- * 做什么：无需 API Key 即可跑通全链路；按顺序出预置问题、对回答做回声点评，流式时逐字输出。
+ * 做什么：无需 API Key 即可跑通全链路。Prompt 含 TASK 标记时返回结构化 JSON，否则保持回声问答。
  */
 import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import { BaseChatModel, type BaseChatModelParams } from '@langchain/core/language_models/chat_models';
 import { AIMessage, AIMessageChunk, type BaseMessage } from '@langchain/core/messages';
 import { ChatGenerationChunk, type ChatResult } from '@langchain/core/outputs';
+import { fakeStructuredReply } from './fake-structured';
 
 const QUESTIONS = [
   '请先做一个简短的自我介绍。',
@@ -29,9 +30,10 @@ export interface FakeEchoChatModelParams extends BaseChatModelParams {
 
 /**
  * 离线假模型（provider kind = fake）：无需 Key 即可跑通本地链路。
- * - 最后一条非 system 消息是用户消息：回声点评
+ * - Prompt 含 TASK: profile.extract / job.extract / resume.generate：返回能通过 Zod 的 JSON
+ * - 最后一条是用户消息：回声点评
  * - 否则：按已回答数量依次给出预置问题
- * 流式时逐字输出，用于验证“逐字、无缓冲”。
+ * 回声逐字输出；JSON 按小段输出，避免一份简历草稿等太久。
  */
 export class FakeEchoChatModel extends BaseChatModel {
   private readonly delayMs: number;
@@ -50,6 +52,8 @@ export class FakeEchoChatModel extends BaseChatModel {
   }
 
   private respond(messages: BaseMessage[]): string {
+    const structured = fakeStructuredReply(messages.map(textOf).join('\n'));
+    if (structured) return structured;
     const convo = messages.filter((m) => m.getType() !== 'system');
     const last = convo.at(-1);
     if (last?.getType() === 'human') {
@@ -83,20 +87,23 @@ export class FakeEchoChatModel extends BaseChatModel {
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
     const text = this.respond(messages);
-    const chars = Array.from(text);
-    for (const [i, ch] of chars.entries()) {
+    const pieces = text.startsWith('{') ? (text.match(/[\s\S]{1,24}/g) ?? [text]) : Array.from(text);
+    // delay 为 0 时也要让出事件循环。图在 stream() 返回前就开始跑，
+    // 中间没有间断的话，token 会在 UI 流订阅之前被丢掉（回声图 resume 会踩中）。
+    const delay = text.startsWith('{') ? Math.min(this.delayMs, 4) : this.delayMs;
+    for (const [i, piece] of pieces.entries()) {
       options.signal?.throwIfAborted();
-      await new Promise((r) => setTimeout(r, this.delayMs));
-      const isLast = i === chars.length - 1;
+      await new Promise((r) => setTimeout(r, delay));
+      const isLast = i === pieces.length - 1;
       const chunk = new ChatGenerationChunk({
-        text: ch,
+        text: piece,
         message: new AIMessageChunk({
-          content: ch,
+          content: piece,
           ...(isLast ? { usage_metadata: this.usage(messages, text) } : {}),
         }),
       });
       yield chunk;
-      await runManager?.handleLLMNewToken(ch, undefined, undefined, undefined, undefined, { chunk });
+      await runManager?.handleLLMNewToken(piece, undefined, undefined, undefined, undefined, { chunk });
     }
   }
 }

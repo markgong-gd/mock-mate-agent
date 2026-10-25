@@ -91,7 +91,7 @@
 | 流式适配方式 | `@ai-sdk/langchain` / 自写 SSE + 自写 hook | P0（P0-04） | `agent/graphs/stream.ts`、`frontend/lib/chat-transport.ts` | **已定：`@ai-sdk/langchain`**（2026-10-23）。`toUIMessageStream` 消费 `streamMode: ["values","messages","custom"]`；`agent/graphs/stream.ts` 关闭其自带 start/finish，自行补 `start` → prelude data part → 图输出 → `data-metrics` → `finish`，流内错误替换为 `{code,message}` JSON；前端 `DefaultChatTransport` 只回传本轮 `answer`。实测 fake 模型逐字输出、首字 ≈ 30~70 ms，无缓冲 |
 | 部署平台 | 魔搭 Docker 创空间 / 自有机器 + 内网穿透 / 轻量服务器 | P0（P0-06） | `Dockerfile`、`deploy/`、`env` | **暂定：魔搭**（2026-10-23）。镜像本地实测通过（见 §10.3）；平台侧实测待上线后补记 |
 | 主力模型 | 按 §5 注册表切换；免费（智谱 Flash、硅基流动小模型）/ 付费（DeepSeek、百炼等）/ 本地 Ollama | 持续评估，P5 用评测结果定 | `.env` 的 `PROVIDER_*` / `MODEL_*` | 按评测结果 |
-| 向量化模型与维度 | 百炼 text-embedding / 硅基流动 bge-m3 / Ollama bge-m3 | P1（P1-08） | `MODEL_EMBED`、`EMBEDDING_DIM` + 重新向量化（§5.4） | 待定 |
+| 向量化模型与维度 | 百炼 text-embedding / 硅基流动 bge-m3 / Ollama bge-m3 | P1（P1-08） | `MODEL_EMBED`、`EMBEDDING_DIM` + 重新向量化（§5.4） | **已定：列固定 `vector(1024)`**（2026-10-24）。与 bge-m3 族对齐，低于 pgvector HNSW 的 2000 维上限。`EMBEDDING_DIM` 不是 1024 时启动失败（换维度要新迁移）。未接真实向量模型时用进程内 n-gram 哈希，模型 id 为 `fake:ngram-1024`（`.env` 写 `MODEL_EMBED=fake:hash` 也走这条）。真实模型示例：`ollama:bge-m3`、`siliconflow:BAAI/bge-m3`；deepseek kind 没有 embeddings。`embed_model` 与当前模型不同的行会重新向量化。检索 SQL 必须带 `user_id`，距离用 `<=>`，相似度 `1 - distance`，索引 `vector_cosine_ops` |
 | 重排 | 不重排 / bge-reranker（`MODEL_RERANK`） | P2a（P2a-04），按检索评测结果 | `agent/retrieval/rerank.ts` | 不重排 |
 | 长期记忆 | 仅业务表 / 业务表 + LangGraph `PostgresStore` | P3（P3-06） | `agent/graphs/memory/*` | 仅业务表 |
 | 语音方案 | 半双工：ASR + TTS（豆包 / 百炼）；实时：百炼 Qwen-Omni-Realtime / 豆包端到端实时语音 | P4（P4-01） | `agent/voice/*` + `MODEL_ASR` / `MODEL_TTS` / `MODEL_REALTIME` | 先半双工 |
@@ -114,7 +114,7 @@ LangGraph.js、LangChain、AI SDK 迭代快，引入或升级前以官方最新�
 | pg-boss | 12.x | 2026-10-23 |
 | postgres / pgvector | 17 / 0.8 | 2026-10-23 |
 | zod | 4.x | 2026-10-23 |
-| 其它 | react 19、react-router 8、vite 8、vitest 5、tailwindcss 4、typescript 6、eslint 10 | 2026-10-23 |
+| 其它 | react 19、react-router 8、vite 8、vitest 5、tailwindcss 4、typescript 6、eslint 10、unpdf 1.x（浏览器端抽 PDF 文本） | 2026-10-23 / unpdf 2026-10-24 |
 
 ### 1.5 构建与运行
 
@@ -1072,6 +1072,7 @@ export interface ApiError {
 | 2026-10-23 | **重写**：项目定位改为个人项目（1 人、学习性质，本地优先、免费平台部署、国内优先）。主要变更见下表 |
 | 2026-10-23 | P0 完成：§1.3 流式适配定为 `@ai-sdk/langchain`、部署平台暂定魔搭；§1.4 登记主版本；§10.3 补本地实测结果。实现补充：provider 新增 `fake` kind（离线假模型，无 Key 时跑通链路）；`llm` 层只定义 `UsageCallbackHandler`，写库的 sink 由 `core/usage.ts` 注入（保持 llm 不依赖 db） |
 | 2026-10-23 | 目录重组：`src/` 按 `frontend` / `backend/{server,core,db,jobs}` / `agent/{graphs,llm,prompts,...}` / `shared/{domain,schemas,env,common}` 四块物理分目录；§2.2、§2.3、§3 与全文路径同步更新，ESLint 分层规则随之调整；新增 [04 · 代码地图](04-code-map.md) |
+| 2026-10-24 | P1-08：向量列固定 1024 维；默认同进程 n-gram 哈希（`fake:ngram-1024`），换 bge-m3 只改 `MODEL_EMBED` 并按 `embed_model` 重嵌。简历生成用 `streamMode: "custom"` 吐 JSON 文本（`text/plain`），前端 `useObject` 边解析边渲染；回声图仍走 UI Message Stream |
 
 ### 本次重写的选型变更
 

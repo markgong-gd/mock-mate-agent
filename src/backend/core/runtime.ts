@@ -10,6 +10,9 @@ import { ensureUser } from '@/backend/db/repos/users';
 import { serverEnv } from '@/shared/env/server';
 import { setupCheckpointer } from '@/agent/graphs/checkpointer';
 import { registerJobs } from '@/backend/jobs';
+import { enqueueEmbedFacts } from '@/backend/jobs/embed-facts';
+import { setEmbedFactsSender } from '@/backend/core/embed.service';
+import { setBoss } from '@/backend/jobs/boss';
 import { assertRegistry } from '@/agent/llm/registry';
 import { logger } from '@/shared/common/logger';
 
@@ -36,6 +39,11 @@ export async function startRuntime() {
   });
   boss.on('error', (err) => logger.error({ err }, 'pg-boss error'));
   await boss.start();
+  setBoss(boss);
+  const running = boss;
+  setEmbedFactsSender(async (userId) => {
+    await enqueueEmbedFacts(running, userId);
+  });
   await registerJobs(boss, { backup: { cron: env.backup.cron, enabled: Boolean(env.backup.dir) } });
   logger.info({ backup: env.backup.dir ? env.backup.cron : 'disabled' }, 'jobs ready');
 }
@@ -48,6 +56,7 @@ export async function stopRuntime() {
     logger.error({ err }, 'pg-boss stop failed');
   }
   boss = undefined;
+  setBoss(undefined);
   await closePool();
 }
 

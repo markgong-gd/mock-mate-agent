@@ -20,6 +20,12 @@ export const router = createBrowserRouter([
     HydrateFallback: () => null,
     children: [
       { index: true, lazy: page(() => import('./routes/home')) },
+      { path: 'profile', lazy: page(() => import('./routes/profile')) },
+      { path: 'jobs', lazy: page(() => import('./routes/jobs')) },
+      { path: 'jobs/:jobId', lazy: page(() => import('./routes/job-detail')) },
+      { path: 'resumes', lazy: page(() => import('./routes/resumes')) },
+      { path: 'resumes/:resumeId', lazy: page(() => import('./routes/resume-editor')) },
+      { path: 'resumes/:resumeId/print', lazy: page(() => import('./routes/resume-print')) },
       { path: 'dev/echo', lazy: page(() => import('./routes/dev-echo')) },
       ...NAV_ITEMS.filter((n) => n.phase).map((n) => ({
         path: n.to.slice(1),

@@ -22,5 +22,8 @@ registry.getChatModel('chat') ──> providers.createChatModel(kind) ──> La
 | `resilience.ts` | fallback、超时、错误归一为 LLM_* |
 | `structured.ts` | 结构化输出 |
 | `usage.ts` | 用量回调（不含正文） |
+| `redact.ts` | 发给模型前盖住手机号、邮箱、18 位证件号。目前接在抽取图上；日志和其他入口是 P3-07 |
+| `embeddings.ts` | 向量模型。fake 时用 n-gram 哈希，维度和列一样是 1024 |
+| `fake-structured.ts` | 假模型看到 `TASK:` 时拼出能通过 Zod 的 JSON |
 
-未来：`redact.ts`（发送前脱敏）、`pricing.ts`（单价）。**规则**：不依赖 backend/db。
+以后：`pricing.ts`（单价）。**规则**：不依赖 backend/db。

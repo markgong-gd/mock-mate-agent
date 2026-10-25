@@ -11,10 +11,14 @@ import { devUser } from './middleware/dev-user';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import { requestId } from './middleware/request-id';
 import { accessRoutes } from './routes/access';
+import { consentRoutes } from './routes/consents';
 import { devRoutes } from './routes/dev';
 import { healthRoutes } from './routes/health';
+import { jobRoutes } from './routes/jobs';
 import { llmRoutes } from './routes/llm';
 import { metaRoutes } from './routes/meta';
+import { profileRoutes } from './routes/profile';
+import { resumeRoutes } from './routes/resumes';
 import type { AppEnv } from './types';
 
 export interface AppConfig {
@@ -35,6 +39,10 @@ const apiRoutes = (cfg: AppConfig) =>
     .route('/meta', metaRoutes({ devRoutes: cfg.enableDevRoutes, accessGate: isGateEnabled(cfg.access) }))
     .route('/access', accessRoutes(cfg.access))
     .route('/llm', llmRoutes())
+    .route('/consents', consentRoutes())
+    .route('/profile', profileRoutes())
+    .route('/jobs', jobRoutes())
+    .route('/resumes', resumeRoutes())
     .route('/dev', devRoutes(cfg.enableDevRoutes));
 
 /**

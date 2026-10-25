@@ -4,3 +4,7 @@
  */
 export * from './users';
 export * from './llm-calls';
+export * from './profile';
+export * from './job';
+export * from './resume';
+export * from './consent';

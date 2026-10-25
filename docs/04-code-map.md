@@ -6,7 +6,29 @@
 
 ## 0. 一句话总结
 
-项目目标是做一个"求职面试 Agent"（简历定制 → 模拟面试 → 诊断复训）。**当前处于 P0：业务功能还没开始写，写好的是整套技术骨架**，并用一张"回声图（echo）"把 **前端 → 后端 → LangGraph → 模型 → 数据库 → 流式返回前端** 的全链路跑通了。echo 是未来面试图的缩小版样板。
+项目目标是做一个"求职面试 Agent"（简历定制 → 模拟面试 → 诊断复训）。**P0 骨架和 P1 简历定制（C1）已经落地**。回声图仍是面试图的缩小版样板；简历链路是第一条真实业务：同意 → 本地抽文本 → 抽取图 → 确认档案 → 向量化 → JD 匹配 → 简历图 → 溯源校验 → 流式预览 → 打印。
+
+## 0.1 简历定制怎么走
+
+```text
+浏览器                         后端 core                         图 / 检索
+──────                         ─────────                         ────────
+勾选用途同意 ──POST /consents──> consents 表
+选 PDF ──unpdf 抽文本──┐
+粘贴文本 ──────────────┤
+规则抽出手机号/邮箱 ───┘──POST /profile/extract──> extract 图（先 redact 再结构化输出）
+确认页改草稿 ──PUT /profile──> 整份替换档案 ──入队──> embed-facts（pg-boss；没启动队列时当场算）
+粘贴 JD ──POST /jobs──> extract 图 ──> skillGap（标签集合，不是向量）
+选岗位 ──POST /resumes/generate──> resume 图：
+                                    load → FactRetriever（必须带 userId）
+                                         → 生成 JSON（custom 流，useObject 边读边画）
+                                         → factRefGuard（引用不在本次 Prompt 里就标 unverified）
+                                         → 新版本 insert
+编辑 ──PUT /resumes/:id──> 再 guard（这次允许该用户的全部事实）──> 新版本
+打印 ──GET /resumes/:id/export──> 仍有 unverified 则 409
+```
+
+假模型只认 Prompt 里的 `TASK:` 和技能目录里的词，草稿需要在确认页改。这是故意的：默认 `.env` 没有 API Key 也能走完这条链路。
 
 ---
 
@@ -28,14 +50,14 @@ mock-mate-agent/
 │   │   ├── graphs/          LangGraph 图：状态、节点、边、存档、流式转换
 │   │   ├── llm/             模型网关：注册表、provider、降级、结构化输出、用量
 │   │   ├── prompts/         Prompt 文本（带版本号）
-│   │   ├── tools/       ○   LLM 可调用的只读工具            (P1 起)
-│   │   ├── retrieval/   ○   向量检索器（题库 / 事实）        (P1 起)
+│   │   ├── tools/       ○   LLM 可调用的只读工具            (P2a 起)
+│   │   ├── retrieval/       事实检索器（题库检索 P2a 再加）
 │   │   ├── rubrics/     ○   评分标准定义                     (P2b 起)
 │   │   └── voice/       ○   语音 ASR/TTS 适配                (P4 起)
 │   │
 │   └── shared/          【公共底座】
 │       ├── domain/          纯函数业务规则（图的条件边判断在这里）
-│       ├── schemas/     ○   Zod 领域定义（唯一的类型来源）    (P1 起)
+│       ├── schemas/         Zod 领域定义（唯一的类型来源）
 │       ├── env/             环境变量校验（server.ts 仅后端，client.ts 仅前端）
 │       └── common/          ctx、错误码、日志、id
 │
@@ -102,10 +124,13 @@ shared/domain   -> shared/schemas                          零 IO、零三方 SD
 |---|---|
 | `db/migrations/0000_extensions.sql` | 启用 `vector`、`pg_trgm` 扩展 |
 | `db/migrations/0001_init.sql` | 建 `users`、`llm_calls` 表 |
+| `db/migrations/0002_confused_meteorite.sql` | C1 业务表：profiles / experiences / facts（含 1024 维向量与 HNSW）/ skills / job_targets / job_requirements / resumes / consents。文件名由 drizzle-kit 生成，不要手改 |
+| `db/seeds/questions/README.md` | 题库字段、技能标签、难度、题型、版权和 JSONL 样例。还没有题目行，录入是 P2a-02 |
 | `db/migrations/meta/*` | drizzle-kit 快照与日志，自动维护，勿手改 |
 | `db/seeds/{questions,rubrics}/` | 题库 / 评分标准种子数据（P2a / P2b 填充） |
 | `tests/helpers/env.ts` | 测试工具：注入测试环境变量（fake 模型）、读取整条流 |
 | `tests/integration/p0.test.ts` | 集成测试：迁移、readyz、用量入库、"中断 → 模拟进程重启 → 恢复" |
+| `tests/integration/p1.test.ts` | 集成测试：未同意 403、抽取不含手机号、保存后有向量、JD 缺口、简历导出、编造引用 409、检索不跨用户 |
 | `deploy/modelscope/entrypoint.sh` | 容器启动：初始化并启动内置 PG → 启动 Node → SIGTERM 时先停 Node 再停 PG |
 | `docs/01~04` | 需求 / 架构 / 计划 / 本文 |
 | `public/favicon.svg` | 静态资源 |
@@ -127,15 +152,26 @@ frontend/
 │   ├── root-layout.tsx   外壳：侧边栏 + <Outlet/>
 │   ├── home.tsx          "系统状态"：healthz / readyz / 各模型 Ping
 │   ├── dev-echo.tsx      回声图调试页：useChat 流式对话、存档恢复
-│   ├── placeholder.tsx   未上线页面占位
+│   ├── profile.tsx         职业档案：同意、抽文本、确认后保存
+│   ├── jobs.tsx            粘贴 JD，看匹配度
+│   ├── job-detail.tsx      单个岗位的要求和缺口
+│   ├── resumes.tsx         useObject 消费生成流，边生成边预览
+│   ├── resume-editor.tsx   改某一版；保存写成新版本
+│   ├── resume-print.tsx    打印页；未溯源时后端 409
+│   ├── placeholder.tsx     未上线页面占位
 │   └── not-found.tsx     404
 ├── features/<领域>/      按业务领域组织的数据 hooks 与业务组件
 │   ├── system/queries.ts     useMeta / useHealth / useReady / usePing
-│   └── dev-echo/queries.ts   useEchoThread（从存档恢复对话）
-├── components/ui/        shadcn 基础组件：button / card / badge / textarea
+│   ├── dev-echo/queries.ts   useEchoThread（从存档恢复对话）
+│   ├── profile/              同意、抽取、保存档案
+│   ├── jobs/                 岗位列表与 skillGap 展示
+│   └── resumes/              版本列表、预览；生成本身用 useObject，不走 Query
+├── components/ui/        shadcn 基础组件：button / card / badge / textarea / input
 └── lib/
     ├── api.ts            hc<AppType> 类型安全客户端 + unwrap + ApiClientError + parseStreamError
     ├── chat-transport.ts useChat 的 transport：只发本轮回答
+    ├── contact.ts        浏览器里抽出手机号和邮箱，正文再发给抽取接口
+    ├── pdf-text.ts       unpdf 在浏览器抽文本，PDF 不上传
     └── utils.ts          cn()：合并 className
 ```
 
@@ -146,7 +182,7 @@ frontend/
 | 通用 UI | `components/ui/`（用 shadcn 生成） |
 | 浏览器端 PDF 文本提取（P1） | `lib/pdf-text.ts`（原文件不上传） |
 
-**怎么工作**：页面 → `features/*/queries.ts` 的 hook → `lib/api.ts`（路径与返回类型来自后端 `AppType`）。流式对话用 `useChat` 加 `lib/chat-transport.ts`。
+**怎么工作**：页面 → `features/*/queries.ts` 的 hook → `lib/api.ts`（路径与返回类型来自后端 `AppType`）。回声对话用 `useChat`。简历生成用 `useObject` 读 `text/plain` 的 JSON 流，因为草稿是一份越来越完整的对象，不是聊天消息。
 
 ---
 

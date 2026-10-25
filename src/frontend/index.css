@@ -91,3 +91,17 @@
       sans-serif;
   }
 }
+
+@media print {
+  aside,
+  header {
+    display: none !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .resume-sheet {
+    box-shadow: none !important;
+  }
+}

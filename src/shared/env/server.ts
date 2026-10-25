@@ -111,7 +111,8 @@ const baseSchema = z.object({
   MODEL_EXTRACT: modelRef,
   MODEL_FALLBACK: z.preprocess(emptyToUndefined, modelRef.optional()),
   MODEL_EMBED: z.preprocess(emptyToUndefined, modelRef.optional()),
-  EMBEDDING_DIM: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().max(2000).optional()),
+  /** 默认 1024，与 facts.embedding 列一致（bge-m3 / 离线 n-gram）。改维度要加迁移 */
+  EMBEDDING_DIM: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().max(2000).default(1024)),
 
   MODEL_CAPS_CHAT: modelCapsOverride,
   MODEL_CAPS_JUDGE: modelCapsOverride,
@@ -193,7 +194,10 @@ export function parseServerEnv(source: Record<string, string | undefined>) {
       issues.push(`MODEL_${alias.toUpperCase()}: provider "${ref.provider}" 不在 PROVIDERS 中`);
     }
   }
-  if (b.MODEL_EMBED && !b.EMBEDDING_DIM) issues.push('EMBEDDING_DIM: 配置 MODEL_EMBED 时必填');
+  // 1024 与 shared/schemas/embedding.ts 的 EMBEDDING_DIM 一致。env 层不能引用 schemas。
+  if (b.EMBEDDING_DIM !== 1024) {
+    issues.push('EMBEDDING_DIM: 当前 facts.embedding 固定为 1024，更换维度需要新迁移（02 §5.4）');
+  }
   if (b.ACCESS_PASSWORD && !b.COOKIE_SECRET) issues.push('COOKIE_SECRET: 启用 ACCESS_PASSWORD 时必填');
 
   if (issues.length) throw new EnvError(issues);

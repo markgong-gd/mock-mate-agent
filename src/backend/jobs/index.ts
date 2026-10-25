@@ -5,6 +5,7 @@
  */
 import type { PgBoss } from 'pg-boss';
 import { registerBackupJob } from './backup';
+import { registerEmbedFactsJob } from './embed-facts';
 
 export interface JobsOptions {
   backup: { cron: string; enabled: boolean };
@@ -13,6 +14,7 @@ export interface JobsOptions {
 /** 注册全部 pg-boss 队列与 handler（handler 只调 core） */
 export async function registerJobs(boss: PgBoss, opts: JobsOptions) {
   await registerBackupJob(boss, opts.backup);
+  await registerEmbedFactsJob(boss);
 }
 
 export { BACKUP_QUEUE } from './backup';

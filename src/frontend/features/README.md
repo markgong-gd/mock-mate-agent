@@ -13,5 +13,8 @@ features/<领域>/
 |---|---|
 | `system/` | 系统状态：useMeta / useHealth / useReady / usePing |
 | `dev-echo/` | 回声图：useEchoThread（从存档恢复对话） |
+| `profile/` | 同意、抽取、保存档案 |
+| `jobs/` | 岗位列表、创建、匹配度展示 |
+| `resumes/` | 版本列表和预览。生成流不走这里，页面直接用 useObject |
 
-未来：`profile/`、`jobs/`、`resumes/`、`interview/`、`reports/`、`growth/`。
+以后：`interview/`、`reports/`、`growth/`。

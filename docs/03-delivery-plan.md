@@ -64,13 +64,13 @@
 | 阶段 | 目标 | 任务数 | 已完成 | 状态 |
 |---|---|---|---|---|
 | P0 | 工程骨架与技术验证 | 7 | 5 | 🚧 |
-| P1 | C1 简历定制 | 13 | 0 | ⬜ |
+| P1 | C1 简历定制 | 13 | 13 | ✅ |
 | P2a | 题库检索 + C2 文字面试 | 10 | 0 | ⬜ |
 | P2b | C3 诊断 | 6 | 0 | ⬜ |
 | P3 | 复训闭环 + 用量 + PII 脱敏 | 9 | 0 | ⬜ |
 | P4 | 语音面试 | 7 | 0 | ⬜ |
 | P5 | 评测与合规 | 8 | 0 | ⬜ |
-| **合计** | | **60** | **5** | |
+| **合计** | | **60** | **18** | |
 | 待补项 | 鉴权等（§9） | 7 | 0 | ⬜ |
 
 ---
@@ -93,39 +93,39 @@
 
 | 状态 | ID | 任务 | 验收标准 | 需求 | 学习点 |
 |---|---|---|---|---|---|
-| ⬜ | P1-01 | Zod Schema：`Profile` / `Experience` / `Fact` / `Skill`、`JobTarget` / `Requirement`、`Resume`（每条 bullet `factRefs.min(1)`） | Schema 有单测；没有 factRefs 的 bullet 校验失败 | R-P1、R-C1-1、R-C1-4 | — |
-| ⬜ | P1-02 | Drizzle 建表：profile / experience / fact（含 embedding）/ skill / job_target / job_requirement / resume / consent | 迁移成功；用户数据表都带 `user_id`，随 users 级联删除 | N-5、N-6 | — |
+| ✅ | P1-01 | Zod Schema：`Profile` / `Experience` / `Fact` / `Skill`、`JobTarget` / `Requirement`、`Resume`（每条 bullet `factRefs.min(1)`） | Schema 有单测；没有 factRefs 的 bullet 校验失败 | R-P1、R-C1-1、R-C1-4 | — (10-24) |
+| ✅ | P1-02 | Drizzle 建表：profile / experience / fact（含 embedding）/ skill / job_target / job_requirement / resume / consent | 迁移成功；用户数据表都带 `user_id`，随 users 级联删除 | N-5、N-6 | — (10-24) |
 
 **简历解析 → 职业档案**
 
 | 状态 | ID | 任务 | 验收标准 | 需求 | 学习点 |
 |---|---|---|---|---|---|
-| ⬜ | P1-03 | 上传前用途告知 + 单独同意（写入 `consents`，后端校验）；浏览器端 `unpdf` 提取文本；联系方式在前端规则抽取，不发给模型 | 未同意时不能上传；网络请求中只有文本，没有 PDF 文件 | N-2、N-4 | — |
-| ⬜ | P1-04 | `extract` 图（profile）：脱敏 → 结构化抽取 → `ProfileDraft`；`POST /api/profile/extract`（不落库） | 输出通过 Zod 校验；发给模型的内容中没有手机号 / 邮箱 | R-P1、N-3 | 单节点图、结构化输出降级 |
-| ⬜ | P1-05 | 档案确认 / 编辑页 + `GET / PUT /api/profile` | 用户校正后保存；数据按 `userId` 隔离 | R-P2、N-6 | — |
+| ✅ | P1-03 | 上传前用途告知 + 单独同意（写入 `consents`，后端校验）；浏览器端 `unpdf` 提取文本；联系方式在前端规则抽取，不发给模型 | 未同意时不能上传；网络请求中只有文本，没有 PDF 文件 | N-2、N-4 | — (10-24) |
+| ✅ | P1-04 | `extract` 图（profile）：脱敏 → 结构化抽取 → `ProfileDraft`；`POST /api/profile/extract`（不落库） | 输出通过 Zod 校验；发给模型的内容中没有手机号 / 邮箱 | R-P1、N-3 | 单节点图、结构化输出降级 (10-24) |
+| ✅ | P1-05 | 档案确认 / 编辑页 + `GET / PUT /api/profile` | 用户校正后保存；数据按 `userId` 隔离 | R-P2、N-6 | — (10-24) |
 
 **JD 解析与匹配**
 
 | 状态 | ID | 任务 | 验收标准 | 需求 | 学习点 |
 |---|---|---|---|---|---|
-| ⬜ | P1-06 | `extract` 图（job）+ `POST /api/jobs` + JD 输入页 | 输出通过 Zod 校验；页面可录入 JD | R-C1-1 | — |
-| ⬜ | P1-07 | `domain.skillGap` + 匹配度与缺口展示 | skillGap 有单测；页面展示匹配度与缺口 | R-C1-2 | — |
+| ✅ | P1-06 | `extract` 图（job）+ `POST /api/jobs` + JD 输入页 | 输出通过 Zod 校验；页面可录入 JD | R-C1-1 | — (10-24) |
+| ✅ | P1-07 | `domain.skillGap` + 匹配度与缺口展示 | skillGap 有单测；页面展示匹配度与缺口 | R-C1-2 | — (10-24) |
 
 **事实检索与简历生成**
 
 | 状态 | ID | 任务 | 验收标准 | 需求 | 学习点 |
 |---|---|---|---|---|---|
-| ⬜ | P1-08 | 确定向量化模型与维度；pg-boss 进程内接入；`embed-facts` 任务；`FactRetriever`（强制 `userId`） | 保存档案后事实自动向量化；按 JD 要求召回相关事实；决策写入 02 §1.3 | R-C1-3 | Embeddings、`BaseRetriever` |
-| ⬜ | P1-09 | `domain.factRefGuard`：引用无效或缺失的条目标记 `unverified` | 构造的编造用例被拦截 | R-C1-4 | — |
-| ⬜ | P1-10 | `resume` 图：load → retrieve_facts → generate → guard → save | 用假模型的图测试覆盖 guard 分支 | R-C1-3、R-C1-4 | 多节点图、检索增强 |
-| ⬜ | P1-11 | `POST /api/resumes/generate`（流式）+ 前端 `useObject` 预览 | 边生成边渲染；落库前后端全量校验 | R-C1-3、N-11 | 结构化流式 |
-| ⬜ | P1-12 | 简历编辑 + 版本；打印模板 + `GET /api/resumes/:id/export` | 同一 JD 可有多个版本；打印为 PDF 排版正确；含 unverified 条目时返回 409 | R-C1-5、R-C1-6 | — |
+| ✅ | P1-08 | 确定向量化模型与维度；pg-boss 进程内接入；`embed-facts` 任务；`FactRetriever`（强制 `userId`） | 保存档案后事实自动向量化；按 JD 要求召回相关事实；决策写入 02 §1.3 | R-C1-3 | Embeddings、`BaseRetriever` (10-24) |
+| ✅ | P1-09 | `domain.factRefGuard`：引用无效或缺失的条目标记 `unverified` | 构造的编造用例被拦截 | R-C1-4 | — (10-24) |
+| ✅ | P1-10 | `resume` 图：load → retrieve_facts → generate → guard → save | 用假模型的图测试覆盖 guard 分支 | R-C1-3、R-C1-4 | 多节点图、检索增强 (10-24) |
+| ✅ | P1-11 | `POST /api/resumes/generate`（流式）+ 前端 `useObject` 预览 | 边生成边渲染；落库前后端全量校验 | R-C1-3、N-11 | 结构化流式 (10-24) |
+| ✅ | P1-12 | 简历编辑 + 版本；打印模板 + `GET /api/resumes/:id/export` | 同一 JD 可有多个版本；打印为 PDF 排版正确；含 unverified 条目时返回 409 | R-C1-5、R-C1-6 | — (10-24) |
 
 **题库准备**
 
 | 状态 | ID | 任务 | 验收标准 | 需求 | 学习点 |
 |---|---|---|---|---|---|
-| ⬜ | P1-13 | 题库规范：字段（02 §7.1）、技能标签体系（与 JD 技能点对齐）、难度分级、题型、来源与版权、JSONL 格式 | 规范写入 `db/seeds/questions/README.md`；P2a-02 可按规范录入 | R-C2-2 | — |
+| ✅ | P1-13 | 题库规范：字段（02 §7.1）、技能标签体系（与 JD 技能点对齐）、难度分级、题型、来源与版权、JSONL 格式 | 规范写入 `db/seeds/questions/README.md`；P2a-02 可按规范录入 | R-C2-2 | — (10-24) |
 
 ## P2a · 题库检索 + C2 文字面试（M2a）
 
@@ -236,6 +236,7 @@
 | 2026-10-23 | 按前后端分离架构重整：新增归属列与需求映射列；P0 扩展为 15 项；合计 73 项 |
 | 2026-10-23 | 修订：P0 精简为 9 项；新增 P1-00 最小鉴权、P1-16 题库负责人、P2b-07 worker 部署、P2b-09 E2E；PII 脱敏由 P5 移到 P3（P3-10）；P2 拆成 P2a / P2b；§1 补团队规模（前端 1 + 后端 1）与工期表；需求编号对齐 01 修订版；合计 72 项 |
 | 2026-10-23 | **重写**：对齐 02 重写版（个人项目、单进程、LangGraph.js、模型注册表、pgvector 混合检索、魔搭部署）。投入改为 1 人、按人日估算；去掉归属列，新增学习点列；鉴权移入待补项（B-01）；合计 60 项 + 7 项待补 |
+| 2026-10-24 | P1（C1 简历定制）完成：同意 → 本地抽文本 → 抽取图 → 确认档案 → 向量化 → JD 匹配 → 简历图（检索 + guard）→ 流式预览 → 版本与打印。题库只写规范，不导入题目。P0-03 / P0-06 仍待真实 Key 与魔搭实测 |
 
 ### 本次重写的主要调整
 

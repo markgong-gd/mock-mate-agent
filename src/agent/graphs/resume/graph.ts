@@ -1,0 +1,184 @@
+/**
+ * @file 【智能体·graphs】定制简历图
+ * 结构：load → retrieve_facts → generate → guard → save
+ * guard 不调模型，只跑 domain.factRefGuard。生成函数可以注入，图测试因此能覆盖“编造引用”分支。
+ */
+import type { LangGraphRunnableConfig } from '@langchain/langgraph';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { END, START, StateGraph } from '@langchain/langgraph';
+import { getJob } from '@/backend/db/repos/jobs';
+import { getProfile, listFactSnippets } from '@/backend/db/repos/profile';
+import { insertResumeVersion } from '@/backend/db/repos/resumes';
+import { getGraphCtx } from '@/agent/graphs/config';
+import { getChatRunnable } from '@/agent/llm/resilience';
+import { extractJson, generateStructured } from '@/agent/llm/structured';
+import { FactRetriever } from '@/agent/retrieval/fact-retriever';
+import { RESUME_PROMPT_VERSION, RESUME_SYSTEM, resumeHuman } from '@/agent/prompts/resume';
+import { factRefGuard } from '@/shared/domain/resume/fact-ref-guard';
+import { rankByOverlap } from '@/shared/domain/retrieval/overlap';
+import { AppError } from '@/shared/common/errors';
+import type { JobView } from '@/shared/schemas/job';
+import type { ProfileBody } from '@/shared/schemas/profile';
+import { resumeContentSchema, type ResumeContent, type RetrievedFact } from '@/shared/schemas/resume';
+import { ResumeState, type ResumeStateType } from './state';
+
+export interface ResumeDelta {
+  type: 'resume-delta';
+  text: string;
+}
+
+export const isResumeDelta = (value: unknown): value is ResumeDelta =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as ResumeDelta).type === 'resume-delta' &&
+  typeof (value as ResumeDelta).text === 'string';
+
+export interface ResumeGenerateInput {
+  profile: ProfileBody;
+  job: JobView;
+  facts: RetrievedFact[];
+}
+
+export interface ResumeGraphDeps {
+  load(userId: string, jobId: string): Promise<{ profile: ProfileBody; job: JobView }>;
+  retrieve(userId: string, job: JobView): Promise<RetrievedFact[]>;
+  generate(
+    input: ResumeGenerateInput,
+    onDelta: (text: string) => void,
+    config: LangGraphRunnableConfig,
+  ): Promise<ResumeContent>;
+  save(userId: string, jobId: string, content: ResumeContent): Promise<{ id: string }>;
+}
+
+async function defaultRetrieve(userId: string, job: JobView): Promise<RetrievedFact[]> {
+  const retriever = new FactRetriever(userId, { k: 4 });
+  const merged = new Map<string, RetrievedFact>();
+  for (const req of job.requirements) {
+    const hits = await retriever.retrieve(`${job.title} ${req.label} ${req.description}`);
+    for (const hit of hits) {
+      const prev = merged.get(hit.id);
+      if (!prev || hit.score > prev.score) merged.set(hit.id, hit);
+    }
+  }
+  const ranked = [...merged.values()].sort((a, b) => b.score - a.score).slice(0, 12);
+  if (ranked.length > 0) return ranked;
+
+  // 向量还没写好，或哈希向量没撞上时，用词面重合挑事实。再没有就带上全部，保证 Prompt 里有真实 id。
+  const snippets = await listFactSnippets(userId);
+  if (snippets.length === 0) throw new AppError('VALIDATION', '档案里还没有可引用的事实');
+  const query = job.requirements.map((req) => `${req.label} ${req.description}`).join(' ');
+  const overlapped = rankByOverlap(
+    query,
+    snippets.map((fact) => ({ ...fact, skillTags: [] as string[] })),
+    12,
+  );
+  const chosen = overlapped.length > 0 ? overlapped : snippets.slice(0, 12);
+  return chosen.map((fact) => ({ id: fact.id, experienceId: fact.experienceId, text: fact.text, score: 0 }));
+}
+
+async function defaultGenerate(
+  input: ResumeGenerateInput,
+  onDelta: (text: string) => void,
+  config: LangGraphRunnableConfig,
+): Promise<ResumeContent> {
+  const messages = [
+    new SystemMessage(RESUME_SYSTEM),
+    new HumanMessage(
+      resumeHuman({
+        jobTitle: input.job.title,
+        jobSummary: input.job.summary,
+        requirements: input.job.requirements,
+        facts: input.facts,
+      }),
+    ),
+  ];
+  const model = getChatRunnable('chat');
+  let text = '';
+  const stream = await model.stream(messages, { ...config, runName: 'resume.generate' });
+  for await (const chunk of stream) {
+    const piece = typeof chunk.content === 'string' ? chunk.content : '';
+    if (!piece) continue;
+    text += piece;
+    onDelta(piece);
+  }
+  const extracted = extractJson(text);
+  const parsed = extracted.ok ? resumeContentSchema.safeParse(extracted.value) : null;
+  if (parsed?.success) return parsed.data;
+  return generateStructured('chat', resumeContentSchema, messages, {
+    functionId: 'resume.generate',
+    promptVersion: RESUME_PROMPT_VERSION,
+  });
+}
+
+export const defaultResumeDeps: ResumeGraphDeps = {
+  async load(userId, jobId) {
+    const profile = await getProfile(userId);
+    if (!profile) throw new AppError('NOT_FOUND', '请先确认职业档案');
+    const job = await getJob(userId, jobId);
+    if (!job) throw new AppError('NOT_FOUND', '目标岗位不存在');
+    return { profile, job };
+  },
+  retrieve: defaultRetrieve,
+  generate: defaultGenerate,
+  async save(userId, jobId, content) {
+    const saved = await insertResumeVersion(userId, jobId, content);
+    return { id: saved.id };
+  },
+};
+
+export function buildResumeGraph(deps: ResumeGraphDeps = defaultResumeDeps) {
+  async function load(state: ResumeStateType, config: LangGraphRunnableConfig) {
+    const { userId } = getGraphCtx(config);
+    return deps.load(userId, state.jobId);
+  }
+
+  async function retrieveFacts(state: ResumeStateType, config: LangGraphRunnableConfig) {
+    const { userId } = getGraphCtx(config);
+    if (!state.job) throw new AppError('INTERNAL', '简历图缺少岗位');
+    return { facts: await deps.retrieve(userId, state.job) };
+  }
+
+  async function generate(state: ResumeStateType, config: LangGraphRunnableConfig) {
+    if (!state.profile || !state.job) throw new AppError('INTERNAL', '简历图缺少档案或岗位');
+    const draft = await deps.generate(
+      { profile: state.profile, job: state.job, facts: state.facts },
+      (text) => config.writer?.({ type: 'resume-delta', text }),
+      config,
+    );
+    return { draft };
+  }
+
+  function guard(state: ResumeStateType) {
+    if (!state.draft) throw new AppError('INTERNAL', '简历图缺少草稿');
+    const { content } = factRefGuard(
+      state.draft,
+      state.facts.map((fact) => fact.id),
+    );
+    return { guarded: content };
+  }
+
+  async function save(state: ResumeStateType, config: LangGraphRunnableConfig) {
+    const { userId } = getGraphCtx(config);
+    if (!state.guarded) throw new AppError('INTERNAL', '简历图缺少校验结果');
+    const saved = await deps.save(userId, state.jobId, state.guarded);
+    return { savedId: saved.id };
+  }
+
+  return new StateGraph(ResumeState)
+    .addNode('load', load)
+    .addNode('retrieve_facts', retrieveFacts)
+    .addNode('generate', generate)
+    .addNode('guard', guard)
+    .addNode('save', save)
+    .addEdge(START, 'load')
+    .addEdge('load', 'retrieve_facts')
+    .addEdge('retrieve_facts', 'generate')
+    .addEdge('generate', 'guard')
+    .addEdge('guard', 'save')
+    .addEdge('save', END)
+    .compile({ name: 'resume' });
+}
+
+export type ResumeGraph = ReturnType<typeof buildResumeGraph>;
+
+export { RESUME_PROMPT_VERSION };

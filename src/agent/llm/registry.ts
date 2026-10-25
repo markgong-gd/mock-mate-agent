@@ -13,6 +13,7 @@ import {
 } from '@/shared/env/server';
 import { AppError } from '@/shared/common/errors';
 import { resolveCaps, type ModelCaps } from './caps';
+import { resetEmbeddingsForTesting } from './embeddings';
 import { createChatModel, jsonModeCallOptions } from './providers';
 
 export type { ChatAlias };
@@ -85,6 +86,7 @@ export function assertRegistry(): { alias: ChatAlias; id: string }[] {
 
 export function resetRegistryForTesting() {
   cache.clear();
+  resetEmbeddingsForTesting();
 }
 
 /** 测试用：直接注入某个别名的模型 */

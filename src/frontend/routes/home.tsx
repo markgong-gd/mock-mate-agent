@@ -75,7 +75,12 @@ export default function HomePage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">系统状态</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          P0 工程骨架：服务、数据库、模型注册表与 LangGraph 运行时的连通性检查。
+          服务、数据库、模型注册表与 LangGraph 运行时的连通性检查。简历定制从
+          <Link to="/profile" className="text-foreground underline-offset-4 hover:underline">
+            {' '}
+            职业档案
+          </Link>
+          开始。
         </p>
       </div>
 

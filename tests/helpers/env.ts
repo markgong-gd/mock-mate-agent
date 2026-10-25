@@ -16,6 +16,8 @@ export const baseTestEnv = (overrides: Record<string, string | undefined> = {}) 
   MODEL_CHAT: 'fake:echo',
   MODEL_JUDGE: 'fake:echo',
   MODEL_EXTRACT: 'fake:echo',
+  MODEL_EMBED: 'fake:hash',
+  EMBEDDING_DIM: '1024',
   FAKE_LLM_DELAY_MS: '0',
   ...overrides,
 });

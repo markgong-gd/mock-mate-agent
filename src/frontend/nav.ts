@@ -27,9 +27,9 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: '系统状态', icon: Activity },
-  { to: '/profile', label: '职业档案', icon: UserRound, phase: 'P1' },
-  { to: '/jobs', label: '目标岗位', icon: Briefcase, phase: 'P1' },
-  { to: '/resumes', label: '定制简历', icon: FileText, phase: 'P1' },
+  { to: '/profile', label: '职业档案', icon: UserRound },
+  { to: '/jobs', label: '目标岗位', icon: Briefcase },
+  { to: '/resumes', label: '定制简历', icon: FileText },
   { to: '/interviews', label: '模拟面试', icon: Mic, phase: 'P2a' },
   { to: '/reports', label: '诊断报告', icon: BarChart3, phase: 'P2b' },
   { to: '/growth', label: '成长曲线', icon: TrendingUp, phase: 'P3' },
