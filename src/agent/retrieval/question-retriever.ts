@@ -28,10 +28,8 @@ export const QUESTION_RETRIEVAL = {
 
 export interface QuestionQuery {
   skills: string[];
-  /** 和技能一起拿去向量化的句子，一般是一条 JD 要求 */
+  /** 和技能一起拿去向量化的句子，一般是一条 JD 要求或一条历史短板 */
   text?: string;
-  /** 预留给短板 id。P3 才有 weaknesses 表，现在不参与过滤 */
-  weaknessIds?: string[];
   difficulty?: [number, number];
   types?: QuestionType[];
   k: number;

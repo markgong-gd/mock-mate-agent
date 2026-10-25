@@ -145,7 +145,7 @@ export async function generateStructuredWith<T extends z.ZodType>(
   });
 }
 
-/** 业务入口：按别名生成结构化输出，失败时切 fallback 再试一次 */
+/** 业务入口：按别名生成结构化输出，失败时切 fallback 再试一次；超时由 withFallback 统一注入 */
 export function generateStructured<T extends z.ZodType>(
   alias: ChatAlias,
   schema: T,
@@ -153,5 +153,9 @@ export function generateStructured<T extends z.ZodType>(
   meta: CallMeta,
   opts: StructuredCallOptions = {},
 ): Promise<z.infer<T>> {
-  return withFallback(alias, (m) => generateStructuredWith(m, schema, messages, meta, opts), opts);
+  return withFallback(
+    alias,
+    (m, signal) => generateStructuredWith(m, schema, messages, meta, { ...opts, signal }),
+    opts,
+  );
 }

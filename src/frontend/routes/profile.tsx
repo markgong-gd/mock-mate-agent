@@ -2,8 +2,10 @@
  * @file 【前端·页面】职业档案
  * 流程：同意 → 浏览器抽出 PDF 文本和联系方式 → 抽取草稿（不落库）→ 用户改完再保存。
  * 联系方式来自本页的规则抽取，抽取接口只收到简历正文，模型侧还会再脱敏一次。
+ * 页面底部是诊断写回的短板（R-P3）：跨会话累积，只读。
  */
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { Loader2 } from 'lucide-react';
 import { Badge } from '@/frontend/components/ui/badge';
 import { Button } from '@/frontend/components/ui/button';
@@ -23,6 +25,7 @@ import { extractPdfText } from '@/frontend/lib/pdf-text';
 import { RESUME_PARSE_CONSENT } from '@/shared/schemas/consent';
 import type { ProfileBody } from '@/shared/schemas/profile';
 import { SKILL_CATALOG, skillLabel } from '@/shared/schemas/skill-tags';
+import type { ProfileWeakness } from '@/shared/schemas/weakness';
 
 type Draft = Omit<ProfileBody, 'contact'>;
 
@@ -288,6 +291,61 @@ export default function ProfilePage() {
       {!profile && saved.isSuccess && (
         <p className="text-muted-foreground text-sm">还没有档案。先解析一份简历。</p>
       )}
+
+      <WeaknessCard weaknesses={saved.data?.weaknesses ?? []} />
     </div>
+  );
+}
+
+const STATUS_LABEL: Record<ProfileWeakness['status'], string> = {
+  open: '待改进',
+  improving: '改善中',
+  closed: '已解决',
+};
+
+const SEVERITY_LABEL: Record<number, string> = { 1: '轻微', 2: '明显', 3: '严重' };
+
+/**
+ * 档案里的短板（R-P3）：由诊断写回，按技能去重，跨场次累积。
+ * 这里只读不改——短板是诊断算出来的结论，手动编辑会让"成长曲线"失真。
+ */
+function WeaknessCard({ weaknesses }: { weaknesses: ProfileWeakness[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>短板积累</CardTitle>
+        <CardDescription>
+          每场面试的诊断都会把短板写回这里，同一技能只留一条。下一场面试会优先问这些点。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {weaknesses.length === 0 && (
+          <p className="text-muted-foreground text-sm">
+            还没有短板记录。完成一场模拟面试并拿到诊断报告后，这里会自动出现。
+          </p>
+        )}
+        {weaknesses.map((item) => (
+          <div key={item.tag} className="space-y-1 rounded-md border px-3 py-2.5 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{item.label}</Badge>
+              <span className="font-medium">{item.title}</span>
+              <Badge variant={item.status === 'closed' ? 'success' : 'secondary'}>
+                {STATUS_LABEL[item.status]}
+              </Badge>
+              <Badge variant={item.severity >= 3 ? 'destructive' : 'secondary'}>
+                {SEVERITY_LABEL[item.severity] ?? item.severity}
+              </Badge>
+              <span className="text-muted-foreground ml-auto text-xs">
+                出现 {item.occurrences} 次 · 最近 {new Date(item.lastSeenAt).toLocaleDateString()}
+              </span>
+            </div>
+            <p className="text-muted-foreground">{item.detail}</p>
+            <Link to={`/reports/${item.reportId}`} className="text-xs underline">
+              查看证据所在的报告
+            </Link>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }

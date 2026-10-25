@@ -42,7 +42,14 @@ const LAYER_DEPS = {
     'shared/common',
   ],
   'backend/jobs': ['backend/core', 'shared/schemas', 'shared/common'],
-  'agent/tools': ['agent/llm', 'backend/db', 'shared/domain', 'shared/schemas', 'shared/common'],
+  'agent/tools': [
+    'agent/graphs',
+    'agent/llm',
+    'backend/db',
+    'shared/domain',
+    'shared/schemas',
+    'shared/common',
+  ],
   'agent/retrieval': ['agent/llm', 'backend/db', 'shared/domain', 'shared/schemas', 'shared/common'],
   'agent/prompts': ['shared/schemas', 'shared/common'],
   'agent/rubrics': ['shared/schemas', 'shared/common'],
@@ -56,11 +63,20 @@ const LAYER_DEPS = {
 };
 const LAYERS = Object.keys(LAYER_DEPS);
 
-/** frontend 对部分层只允许访问特定文件（backend/server 仅 import type AppType） */
-const FRONTEND_EXCEPTIONS = {
-  'backend/server': ['./app.ts'],
-  'shared/common': ['./errors.ts'],
-  'shared/env': ['./client.ts'],
+/**
+ * 某一层对另一层只允许访问特定文件。
+ * - frontend 对 backend/server 只能 import type AppType
+ * - agent/tools 只需要图的运行上下文契约（getGraphCtx），不允许反过来依赖图本身
+ */
+const LAYER_EXCEPTIONS = {
+  frontend: {
+    'backend/server': ['./app.ts'],
+    'shared/common': ['./errors.ts'],
+    'shared/env': ['./client.ts'],
+  },
+  'agent/tools': {
+    'agent/graphs': ['./config.ts'],
+  },
 };
 
 const layerZones = LAYERS.flatMap((layer) => {
@@ -70,15 +86,12 @@ const layerZones = LAYERS.flatMap((layer) => {
     from: `./src/${l}`,
     message: `分层约束：${layer} 不允许依赖 ${l}（见 docs/02-architecture.md §2.3）`,
   }));
-  const partial =
-    layer === 'frontend'
-      ? Object.entries(FRONTEND_EXCEPTIONS).map(([l, except]) => ({
-          target: './src/frontend',
-          from: `./src/${l}`,
-          except,
-          message: `分层约束：frontend 只能使用 ${l} 中的 ${except.join(', ')}`,
-        }))
-      : [];
+  const partial = Object.entries(LAYER_EXCEPTIONS[layer] ?? {}).map(([l, except]) => ({
+    target: `./src/${layer}`,
+    from: `./src/${l}`,
+    except,
+    message: `分层约束：${layer} 只能使用 ${l} 中的 ${except.join(', ')}`,
+  }));
   return [...forbidden, ...partial];
 });
 

@@ -6,7 +6,7 @@
 
 ## 0. 一句话总结
 
-项目目标是做一个"求职面试 Agent"（简历定制 → 模拟面试 → 诊断复训）。**P0 骨架和 P1 简历定制（C1）已经落地**。回声图仍是面试图的缩小版样板；简历链路是第一条真实业务：同意 → 本地抽文本 → 抽取图 → 确认档案 → 向量化 → JD 匹配 → 简历图 → 溯源校验 → 流式预览 → 打印。
+项目目标是做一个"求职面试 Agent"（简历定制 → 模拟面试 → 诊断复训）。**P0 骨架到 P3 复训闭环已经落地**：同意 → 本地抽文本 → 抽取图 → 确认档案 → 向量化 → JD 匹配 → 简历图 → 溯源校验 → 流式预览 → 打印 → 面试图（追问、存档续跑）→ 诊断图（并行打分、短板取证）→ 短板写回档案 → 下一场优先问短板。回声图仍是面试图的缩小版样板。
 
 ## 0.1 简历定制怎么走
 
@@ -48,9 +48,9 @@ mock-mate-agent/
 │   │
 │   ├── agent/           【智能体】AI 相关，运行在后端进程内（不是独立服务）
 │   │   ├── graphs/          LangGraph 图：状态、节点、边、存档、流式转换
-│   │   ├── llm/             模型网关：注册表、provider、降级、结构化输出、用量
+│   │   ├── llm/             模型网关：注册表、provider、降级、结构化输出、脱敏、单价、用量
 │   │   ├── prompts/         Prompt 文本（带版本号）
-│   │   ├── tools/       ○   LLM 可调用的只读工具            (P2a 起)
+│   │   ├── tools/           LLM / 图可调用的只读工具（userId 从 config 取）
 │   │   ├── retrieval/       事实检索、题库检索（关键词 + RRF，不重排）
 │   │   ├── rubrics/         评分标准 → 提示词文本（定义本身在 db/seeds/rubrics/）
 │   │   └── voice/       ○   语音 ASR/TTS 适配                (P4 起)
@@ -59,7 +59,7 @@ mock-mate-agent/
 │       ├── domain/          纯函数业务规则（图的条件边判断在这里）
 │       ├── schemas/         Zod 领域定义（唯一的类型来源）
 │       ├── env/             环境变量校验（server.ts 仅后端，client.ts 仅前端）
-│       └── common/          ctx、错误码、日志、id
+│       └── common/          ctx、错误码、日志、id、PII 脱敏规则
 │
 ├── db/              数据库迁移 SQL 与种子数据（drizzle-kit 生成）
 ├── tests/           集成测试与测试工具（单元测试与源码同目录，*.test.ts）
@@ -86,8 +86,10 @@ backend/server  -> backend/core, shared/*
 backend/core    -> agent/{graphs,llm,retrieval,voice}, backend/{jobs,db}, shared/*
 backend/jobs    -> backend/core（handler 只调 core）
 agent/graphs    -> agent/{tools,retrieval,prompts,rubrics,llm}, backend/db, shared/{domain,schemas,common}
+agent/tools     -> agent/llm, backend/db, shared/{domain,schemas,common}
+                   + agent/graphs 仅 config.ts（只要 getGraphCtx，不碰图本身）
 agent/llm       -> shared/{schemas,common,env}            （不依赖 db！）
-backend/db      -> shared/{schemas,common,env}
+backend/db      -> shared/{schemas,common,env}            （不依赖 domain！规则由上层算好传进来）
 shared/domain   -> shared/schemas                          零 IO、零三方 SDK
 ```
 
@@ -136,6 +138,7 @@ shared/domain   -> shared/schemas                          零 IO、零三方 SD
 | `tests/integration/p1.test.ts` | 集成测试：未同意 403、抽取不含手机号、保存后有向量、JD 缺口、简历导出、编造引用 409、检索不跨用户 |
 | `tests/integration/p2a.test.ts` | 集成测试：题库 recall@5、向量化可续跑、追问、幂等、并发 409、重启后续跑 |
 | `tests/integration/p2b.test.ts` | 集成测试（主链路）：档案 → JD → 简历 → 面试 → 报告；诊断幂等、短板证据可核对、打分失败后手动重试续跑 |
+| `tests/integration/p3.test.ts` | 集成测试（闭环）：短板写回档案、第二场命中短板、专项训练、成长曲线、单场用量与成本、PII 不进模型、故障注入后回答不丢 |
 | `deploy/modelscope/entrypoint.sh` | 容器启动：初始化并启动内置 PG → 启动 Node → SIGTERM 时先停 Node 再停 PG |
 | `docs/01~04` | 需求 / 架构 / 计划 / 本文 |
 | `public/favicon.svg` | 静态资源 |
@@ -164,7 +167,8 @@ frontend/
 │   ├── resume-editor.tsx   改某一版；保存写成新版本
 │   ├── resume-print.tsx    打印页；未溯源时后端 409
 │   ├── interviews.tsx      面试设置 + 对话（useChat）；结束后给出报告入口
-│   ├── reports.tsx         报告列表 + 详情：雷达图、逐题点评、短板证据、复训计划、Rubric
+│   ├── reports.tsx         报告列表 + 详情：雷达图、逐题点评、短板证据、复训计划、用量成本、Rubric
+│   ├── growth.tsx          成长曲线：按技能的得分趋势 + 总分趋势（手写 SVG 折线）
 │   ├── placeholder.tsx     未上线页面占位
 │   └── not-found.tsx     404
 ├── features/<领域>/      按业务领域组织的数据 hooks 与业务组件
@@ -174,7 +178,8 @@ frontend/
 │   ├── jobs/                 岗位列表与 skillGap 展示
 │   ├── resumes/              版本列表、预览；生成本身用 useObject，不走 Query
 │   ├── interview/            场次列表、创建、结束；对话本身用 useChat + transport
-│   └── reports/              报告列表与详情（生成中按 2 秒轮询）+ 手写 SVG 雷达图
+│   ├── reports/              报告列表与详情（生成中按 2 秒轮询）+ 手写 SVG 雷达图 + 单场用量 + 一键专项训练
+│   └── growth/               成长曲线数据与手写 SVG 折线
 ├── components/ui/        shadcn 基础组件：button / card / badge / textarea / input
 └── lib/
     ├── api.ts            hc<AppType> 类型安全客户端 + unwrap + ApiClientError + parseStreamError
@@ -213,8 +218,11 @@ frontend/
 | `routes/access.ts` | `/api/access/status｜login｜logout` |
 | `routes/llm.ts` | `GET /api/llm/ping?alias=chat` |
 | `routes/interviews.ts` | `/api/interviews`（列表、创建、`:id`、`:id/chat` 流式、`:id/finish`） |
+| `routes/training.ts` | `POST /api/training`：按报告里的某条短板开一场 `kind = drill` 的面试 |
 | `routes/reports.ts` | `/api/reports`（列表，可带 `?sessionId=`）、`/api/reports/:id`、`/api/reports/:id/retry` |
-| `routes/dev.ts` | `/api/dev/echo/:threadId`（GET 恢复，POST `/chat` 流式）、存档查看、Mermaid |
+| `routes/growth.ts` | `GET /api/growth`：按技能的得分趋势 + 总分趋势 |
+| `routes/usage.ts` | `GET /api/usage/sessions/:id`：单场 Token、耗时与估算成本 |
+| `routes/dev.ts` | `/api/dev/echo/:threadId`（GET 恢复，POST `/chat` 流式）、存档查看、Mermaid、`POST /faults` 故障注入 |
 
 **路由文件的标准写法只有三步**：
 
@@ -233,9 +241,12 @@ validate(入参) → 调 core 的函数(toCtx(c), input) → c.json(...) 或返�
 | `llm.service.ts` | `listModelAliases`、`pingModel` |
 | `health.service.ts` | `checkReady`：检查 DB |
 | `usage.ts` | `createUsageHandler`：把 `agent/llm` 的用量回调接到 `backend/db` 的写库函数 |
+| `usage.service.ts` | 单场用量聚合、成本现算（`agent/llm/pricing`）、单场 Token 上限检查（`BUDGET_EXCEEDED`） |
 | `backup.service.ts` | `runBackup`：`pg_dump`，保留最近 N 份 |
 | `interview.service.ts` | 文字面试：创建、advisory lock、先写回答再推进图、结束；场次变成 finished 后触发诊断 |
+| `training.service.ts` | 专项训练：按报告里的一条短板建 `kind = drill` 的会话，之后复用面试链路 |
 | `diagnosis.service.ts` | C3 诊断：幂等建档 + 入队、跑诊断图（断点续跑）、报告视图、手动重试；报告状态只在这里改 |
+| `growth.service.ts` | 成长曲线：`skill_score_history` 按技能分组 + 报告总分折线 |
 | `question-embed.service.ts` | 题库向量化。只补 embedding 为空或模型不一致的行 |
 | `seed-cli.ts` | `pnpm db:seed`：导入 Rubric 与题库 JSONL，再补算题目向量 |
 
@@ -276,7 +287,7 @@ validate(入参) → 调 core 的函数(toCtx(c), input) → c.json(...) 或返�
 | `echo/state.ts` | 回声图状态：`messages` / `round` / `maxRounds` / `status` |
 | `echo/graph.ts` | 节点 `ask` / `wait_answer`(interrupt) / `reply` / `finish` + 边 + compile |
 | `interview/` | 文字面试图：`plan_questions` / `ask` / `wait_answer`(interrupt) / `evaluate` / `finalize` |
-| `diagnosis/` | 诊断图：`load` → `Send` 并行 `score_answer` → `aggregate` → `extract_weaknesses` → `plan_training` → `persist` |
+| `diagnosis/` | 诊断图：`load` → `Send` 并行 `score_answer` → `aggregate` → `extract_weaknesses` → `plan_training` → `persist`（含短板写回档案） |
 
 **一张图的标准结构**：
 
@@ -300,7 +311,17 @@ agent/graphs/<图名>/
 | `fake.ts` | 离线假模型，逐字输出 |
 | `resilience.ts` | `getChatRunnable(alias)` 带 fallback；超时；错误归一为 `LLM_*` |
 | `structured.ts` | `generateStructured(alias, zodSchema, messages)`：选方式 → 校验 → 修复重试 → fallback |
+| `redact.ts` | 发给模型前脱敏（规则在 `shared/common/pii.ts`，和日志共用一套） |
+| `pricing.ts` | `provider:model` → 单价（元 / 百万 token）；成本现算不落库，没配单价返回 `null` |
 | `usage.ts` | `UsageCallbackHandler`：产出用量记录（写库函数由 core 注入） |
+
+### 2.9.1 `src/agent/tools/`：只读工具
+
+| 文件 | 做什么 |
+|---|---|
+| `weaknesses.ts` | `getOpenWeaknesses(config)` 读该用户未解决的短板；`openWeaknessesTool` 是它的 LangChain 工具包装 |
+
+**铁律**：`userId` 只从 `config.configurable` 取，不做成工具入参——入参可能由模型填，一旦身份可填就能被 Prompt 注入越权（N-6）。
 
 ### 2.10 `src/agent/prompts/`、`src/agent/rubrics/`
 
@@ -324,10 +345,11 @@ agent/graphs/<图名>/
 | `common/ctx.ts` | `RequestCtx {userId, requestId}`：身份在各层间传递的唯一方式 |
 | `common/errors.ts` | 错误码、HTTP 状态、文案、`AppError`（前后端共用，不能引 Node API） |
 | `common/ids.ts` | `newId()`、`hashUserId()`（日志不出现明文 userId） |
-| `common/logger.ts` | pino 根 logger（不记正文与 PII） |
+| `common/pii.ts` | 手机号 / 邮箱 / 证件号的脱敏规则 + `redactPiiDeep`（零依赖，模型入口与日志共用） |
+| `common/logger.ts` | pino 根 logger（不记正文与 PII；`hooks` + `formatters` 兜底脱敏） |
 
-`shared/domain/` 现有 `interview/{route,allocate}.ts`、`resume/fact-ref-guard.ts`、`diagnosis/aggregate.ts`、`matching/skill-gap.ts`、`retrieval/{rrf,overlap,recall}.ts`，P3 再加 `weakness/merge.ts`；
-`shared/schemas/` 按领域放 Zod 定义（`profile` / `job` / `resume` / `interview` / `question` / `rubric` / `diagnosis` / `weakness` / `skill-tags`）。
+`shared/domain/` 现有 `interview/{route,allocate}.ts`、`resume/fact-ref-guard.ts`、`diagnosis/aggregate.ts`、`weakness/merge.ts`、`matching/skill-gap.ts`、`retrieval/{rrf,overlap,recall}.ts`；
+`shared/schemas/` 按领域放 Zod 定义（`profile` / `job` / `resume` / `interview` / `question` / `rubric` / `diagnosis` / `weakness` / `growth` / `usage` / `skill-tags`）。
 
 ---
 
@@ -528,11 +550,40 @@ frontend/routes/home.tsx                点击 Ping
  +-------+-------+
          v
  +-----------+  单事务：report(done) / weaknesses / skill_score_history
- |  persist  |
+ |  persist  |  + 短板写回档案：先读历史短板 → domain/weakness/merge 算状态变化 → 一起写
  +-----+-----+
        v
       END     失败 → status = failed + error；thread = diag:<reportId>，重试从断点续跑
-```
+ ```
+
+ ### 4.3.2 复训闭环（P3）
+
+ ```text
+           第 1 场面试 ── finish ──> diagnosis 图
+                                       |
+                                       v  persist 单事务
+                          weaknesses(本场, status=open) + skill_score_history
+                                       |
+                         domain/weakness/merge（按 tag 去重 / 取较大严重度 / 状态流转）
+                                       |
+             +-------------------------+--------------------------+
+             v                         v                          v
+    GET /api/profile           tools.getOpenWeaknesses        GET /api/growth
+    档案页"短板积累"            （userId 从 config 取）        技能得分趋势折线
+    一个技能一条                        |
+                                       v
+                        第 2 场 plan_questions：短板查询 + JD 查询一起召回
+                                       |
+                               domain.allocate（短板题整组排前面）
+                                       |
+                                       v
+                        第 2 场诊断 → 同一技能再判一次 → occurrences +1
+                                       |
+                  本场考到且分数够高 → closed；分数中等 → improving；没考到 → 不动
+
+ 旁路：报告页每条短板 / 每条复训计划都能一键 POST /api/training
+       → kind = 'drill' + settings.drillTag → 只按这一个技能召回，其余流程完全复用
+ ```
 
 ### 4.4 以后加业务时三块怎么扩展
 

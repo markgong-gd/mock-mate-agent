@@ -2,17 +2,22 @@
  * @file 【后端·core】职业档案用例
  * 抽取只返回草稿，不写库。用户在确认页改完，PUT 才整份替换并入队向量化。
  * id 在返回草稿时就分配：确认页来回改字，事实 id 保持不变，已生成的简历引用才不会断。
+ * GET 还会带上诊断写回的短板（R-P3）：跨会话累积，按技能去重，前端在档案页展示。
  */
 import type { RequestCtx } from '@/shared/common/ctx';
 import { AppError } from '@/shared/common/errors';
 import { hashUserId, newId } from '@/shared/common/ids';
 import { logger } from '@/shared/common/logger';
 import { getProfile, saveProfile } from '@/backend/db/repos/profile';
+import { listUserWeaknesses } from '@/backend/db/repos/diagnosis';
 import { hasConsent } from '@/backend/db/repos/consents';
 import { buildProfileExtractGraph, type ProfileExtractGraph } from '@/agent/graphs/extract/graph';
 import { redactText } from '@/agent/llm/redact';
+import { mergeWeaknesses } from '@/shared/domain/weakness/merge';
 import { RESUME_PARSE_CONSENT } from '@/shared/schemas/consent';
 import type { ProfileBody, ProfileExtractOutput } from '@/shared/schemas/profile';
+import { skillLabel } from '@/shared/schemas/skill-tags';
+import type { ProfileWeakness } from '@/shared/schemas/weakness';
 import { createUsageHandler } from './usage';
 import { requestEmbedFacts } from './embed.service';
 
@@ -39,8 +44,27 @@ function materialize(draft: ProfileExtractOutput): ProfileDraft {
   };
 }
 
+/**
+ * 档案 = 用户确认的结构化内容 + 诊断写回的短板（R-P3）。
+ * 短板按 tag 去重（domain/weakness/merge），所以同一个技能练了几场也只看到一条。
+ */
 export async function readProfile(ctx: RequestCtx) {
-  return { profile: await getProfile(ctx.userId) };
+  const [profile, rows] = await Promise.all([getProfile(ctx.userId), listUserWeaknesses(ctx.userId)]);
+  const weaknesses: ProfileWeakness[] = mergeWeaknesses({ existing: rows }).profile.map((item) => ({
+    tag: item.tag,
+    label: skillLabel(item.tag),
+    title: item.title,
+    detail: item.detail,
+    severity: item.severity,
+    status: item.status,
+    occurrences: item.occurrences,
+    firstSeenAt: new Date(item.firstSeenAt).toISOString(),
+    lastSeenAt: new Date(item.lastSeenAt).toISOString(),
+    reportId: item.reportId,
+    sessionId: item.sessionId,
+    evidenceQuote: item.evidenceQuote,
+  }));
+  return { profile, weaknesses };
 }
 
 /** 脱敏 → 抽取图 → 补 id。不落库。 */

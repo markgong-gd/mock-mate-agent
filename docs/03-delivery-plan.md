@@ -67,10 +67,10 @@
 | P1 | C1 简历定制 | 13 | 13 | ✅ |
 | P2a | 题库检索 + C2 文字面试 | 10 | 10 | ✅ |
 | P2b | C3 诊断 | 6 | 6 | ✅ |
-| P3 | 复训闭环 + 用量 + PII 脱敏 | 9 | 0 | ⬜ |
+| P3 | 复训闭环 + 用量 + PII 脱敏 | 9 | 9 | ✅ |
 | P4 | 语音面试 | 7 | 0 | ⬜ |
 | P5 | 评测与合规 | 8 | 0 | ⬜ |
-| **合计** | | **60** | **34** | |
+| **合计** | | **60** | **43** | |
 | 待补项 | 鉴权等（§9） | 7 | 0 | ⬜ |
 
 ---
@@ -157,15 +157,15 @@
 
 | 状态 | ID | 任务 | 验收标准 | 需求 | 学习点 |
 |---|---|---|---|---|---|
-| ⬜ | P3-01 | 短板写回档案（`domain.merge`：合并 / 去重 / 更新严重度与状态） | merge 有单测；档案中能看到短板 | R-P3 | — |
-| ⬜ | P3-02 | 复训计划在报告页展示 | 报告页展示复训计划 | R-C3-4 | — |
-| ⬜ | P3-03 | `plan_questions` 读取历史短板（`tools.getOpenWeaknesses`），检索与分配优先命中短板 | 第二场面试的题目命中短板 | R-C2-4 | 工具从 config 取 `userId` |
-| ⬜ | P3-04 | 专项训练：`POST /api/training { weaknessId }`，报告页一键进入 | 只针对该短板出题 | R-C2-5 | — |
-| ⬜ | P3-05 | 成长曲线：`GET /api/growth` + 图表 | 展示同一技能多次诊断的得分趋势 | R-C3-5 | — |
-| ⬜ | P3-06 | 长期记忆评估：是否启用 LangGraph `PostgresStore` 存“面试洞察” | 决策写入 02 §1.3；启用时纳入一键删除 | R-P3 | Store、命名空间 |
-| ⬜ | P3-07 | PII 脱敏：`llm/redact` 覆盖发送给模型、写日志的全部路径 | 用含手机号 / 邮箱 / 证件号的简历和回答测试，模型请求与日志中没有明文 PII | N-3 | — |
-| ⬜ | P3-08 | 用量与成本：`llm/pricing`、`GET /api/usage/sessions/:id`、单场 Token 上限 | 能查看单场 Token 与成本；超限返回 `BUDGET_EXCEEDED` | N-12 | — |
-| ⬜ | P3-09 | 韧性与故障注入：超时 / 重试 / fallback；前端按错误码提示 | 模拟模型失败时有提示，且数据不丢 | N-9 | `withFallbacks` |
+| ✅ | P3-01 | 短板写回档案（`domain.merge`：合并 / 去重 / 更新严重度与状态） | merge 有单测；档案中能看到短板 | R-P3 | — (10-25) |
+| ✅ | P3-02 | 复训计划在报告页展示 | 报告页展示复训计划 | R-C3-4 | — (10-25) |
+| ✅ | P3-03 | `plan_questions` 读取历史短板（`tools.getOpenWeaknesses`），检索与分配优先命中短板 | 第二场面试的题目命中短板 | R-C2-4 | 工具从 config 取 `userId` (10-25) |
+| ✅ | P3-04 | 专项训练：`POST /api/training { reportId, tag }`，报告页一键进入 | 只针对该短板出题 | R-C2-5 | — (10-25) |
+| ✅ | P3-05 | 成长曲线：`GET /api/growth` + 图表 | 展示同一技能多次诊断的得分趋势 | R-C3-5 | — (10-25) |
+| ✅ | P3-06 | 长期记忆评估：是否启用 LangGraph `PostgresStore` 存“面试洞察” | 决策写入 02 §1.3；启用时纳入一键删除 | R-P3 | Store、命名空间 (10-25) |
+| ✅ | P3-07 | PII 脱敏：规则下沉到 `shared/common/pii`，覆盖发送给模型、写日志的全部路径 | 用含手机号 / 邮箱 / 证件号的简历和回答测试，模型请求与日志中没有明文 PII | N-3 | — (10-25) |
+| ✅ | P3-08 | 用量与成本：`llm/pricing`、`GET /api/usage/sessions/:id`、单场 Token 上限 | 能查看单场 Token 与成本；超限返回 `BUDGET_EXCEEDED` | N-12 | — (10-25) |
+| ✅ | P3-09 | 韧性与故障注入：超时 / 重试 / fallback（`POST /api/dev/faults` 注入）；前端按错误码提示 | 模拟模型失败时有提示，且数据不丢 | N-9 | `withFallbacks` (10-25) |
 
 ## P4 · 语音面试（M4）
 
@@ -224,7 +224,7 @@
 | P0 | P0-07 | 依赖主版本登记 |
 | P1 | P1-08 | 向量化模型与维度 |
 | P2a | P2a-04 | 是否启用关键词召回与重排 |
-| P3 | P3-06 | 是否启用 LangGraph Store |
+| P3 | P3-06 | 是否启用 LangGraph Store（**已定：不启用**） |
 | P4 | P4-01 | 语音方案；是否做实时双工 |
 | P5 | P5-02 | 主力模型（按评测结果） |
 
@@ -239,6 +239,7 @@
 | 2026-10-24 | P1（C1 简历定制）完成：同意 → 本地抽文本 → 抽取图 → 确认档案 → 向量化 → JD 匹配 → 简历图（检索 + guard）→ 流式预览 → 版本与打印。题库只写规范，不导入题目。P0-03 / P0-06 仍待真实 Key 与魔搭实测 |
 | 2026-10-25 | P2a（题库检索 + C2 文字面试）完成。检索决策：启用 pg_trgm 关键词召回与 RRF，不启用重排（02 §1.3）。创建面试只返回 id，第一题由 chat 拉起。诊断仍属 P2b |
 | 2026-10-25 | P2b（C3 诊断）完成。Rubric v1 以 `db/seeds/rubrics/*.json` 为源头、按 version 入库，报告记录所用版本；诊断图用 `Send` 并行逐题打分，`scores` 追加型 reducer 汇总，`thread = diag:<reportId>` 支持断点续跑；短板的 `turnId` 与原话由图回填校验（模型只给 `[T1]` 编号）；报告页雷达图手写 SVG，不新增图表依赖 |
+| 2026-10-25 | P3（复训闭环 + 用量 + PII 脱敏）完成，达到 M3。决策：**不启用 LangGraph Store，长期记忆只用业务表**（02 §1.3 P3-06）。短板写回档案用 `shared/domain/weakness/merge.ts`（按 tag 去重、严重度取较大值、状态只在"本场考到"时流转），诊断图算出 `weaknessStatusChanges` 后随 `saveDiagnosis` 写进同一事务；档案页与出题读同一个合并结果。新增 `agent/tools/`（`getOpenWeaknesses`，`userId` 只从 config 取，ESLint 为 `agent/tools` 单独开了 `agent/graphs/config.ts` 的例外）。专项训练复用面试链路：`interview_sessions.kind = 'drill'` + `settings.drillTag`，不新建表、不新建图。成长曲线与报告雷达图一样手写 SVG。PII 规则下沉 `shared/common/pii.ts`，模型入口与 pino 日志共用；成本用 `agent/llm/pricing.ts` 现算不落库（单价缺失返回 `null` 而不是 0），诊断调用也计入面试 `session_id`。**没有新增迁移**：短板档案视图是对 `weaknesses` 的合并读，成长曲线直接用 `skill_score_history` |
 
 ### 本次重写的主要调整
 

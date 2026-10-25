@@ -13,6 +13,7 @@ import { buildEchoGraph, type EchoGraph } from '@/agent/graphs/echo/graph';
 import { buildInterviewGraph } from '@/agent/graphs/interview/graph';
 import type { EchoStateType } from '@/agent/graphs/echo/state';
 import { graphToUIStream } from '@/agent/graphs/stream';
+import { injectFakeFaults } from '@/agent/llm/fake';
 import type { RequestCtx } from '@/shared/common/ctx';
 import { AppError } from '@/shared/common/errors';
 import { createUsageHandler } from './usage';
@@ -194,4 +195,13 @@ export async function getThreadState(
 export async function getGraphMermaid(graphName: DevGraphName): Promise<string> {
   const g = await GRAPHS[graphName]().getGraphAsync();
   return g.drawMermaid();
+}
+
+/**
+ * 故障注入（P3-09，仅开发路由）：让接下来 n 次假模型调用抛错。
+ * 用来手工验收"模型失败时页面有提示、已提交的回答不丢、点重试能从断点续跑"。
+ * 只对 kind = fake 的 provider 生效；接了真实模型时注入不会有任何效果。
+ */
+export function injectLlmFailures(n: number): { pendingFailures: number; fakeOnly: true } {
+  return { pendingFailures: injectFakeFaults(n), fakeOnly: true };
 }

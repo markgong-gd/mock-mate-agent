@@ -25,6 +25,7 @@ export function toSummary(row: SessionRow): InterviewSummary {
     id: row.id,
     jobId: row.jobTargetId,
     jobTitle: row.jobTitle,
+    kind: row.kind,
     status: row.status,
     settings: row.settings,
     createdAt: row.createdAt.toISOString(),
@@ -57,17 +58,21 @@ export async function insertInterviewSession(input: {
   userId: string;
   jobId: string;
   settings: InterviewSettings;
+  /** 专项训练传 'drill'；默认普通面试 */
+  kind?: SessionRow['kind'];
 }): Promise<SessionRow> {
   const id = newId();
-  await getDb().insert(interviewSessions).values({
-    id,
-    userId: input.userId,
-    jobTargetId: input.jobId,
-    mode: 'text',
-    kind: 'normal',
-    settings: input.settings,
-    status: 'pending',
-  });
+  await getDb()
+    .insert(interviewSessions)
+    .values({
+      id,
+      userId: input.userId,
+      jobTargetId: input.jobId,
+      mode: 'text',
+      kind: input.kind ?? 'normal',
+      settings: input.settings,
+      status: 'pending',
+    });
   const saved = await loadSession(input.userId, id);
   if (!saved) throw new Error('面试会话写入后读不到');
   return saved;

@@ -5,11 +5,11 @@ AI 相关代码，**运行在后端进程内**，由 `backend/core` 调用（不
 | 子目录 | 状态 | 职责 |
 |---|---|---|
 | [graphs/](graphs/) | 已有 | LangGraph 图：状态、节点、边、存档、流式转换 |
-| [llm/](llm/) | 已有 | 模型网关：注册表、provider、能力表、降级、结构化输出、用量 |
+| [llm/](llm/) | 已有 | 模型网关：注册表、provider、能力表、降级、结构化输出、脱敏、单价、用量 |
 | [prompts/](prompts/) | 已有 | 带版本号的 Prompt |
-| `tools/` | P1 起 | LLM 可调用的**只读**工具（userId 从 config 取） |
-| `retrieval/` | P1 起 | QuestionRetriever / FactRetriever（pgvector） |
-| `rubrics/` | P2b 起 | 评分标准定义 |
+| [tools/](tools/) | 已有 | 图与 LLM 可调用的**只读**工具（userId 从 config 取） |
+| [retrieval/](retrieval/) | 已有 | QuestionRetriever / FactRetriever（pgvector） |
+| [rubrics/](rubrics/) | 已有 | 评分标准 → 提示词文本 |
 | `voice/` | P4 起 | ASR / TTS 适配 |
 
 **关键约定**

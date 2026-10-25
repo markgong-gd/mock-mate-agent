@@ -10,7 +10,12 @@ Zod schema 是档案、JD、简历、同意、题库种子的类型来源。API 
 | `resume.ts` | 简历内容。每条 bullet 的 `factRefs` 至少 1 个 |
 | `consent.ts` | 简历解析同意的目的与版本 |
 | `question.ts` | 题库种子、检索结果、进入面试图的题目 |
-| `interview.ts` | 面试设置、评估结果、进度和接口入参 |
+| `interview.ts` | 面试设置（含专项训练的 `drillTag`）、评估结果、进度和接口入参 |
+| `rubric.ts` | 评分标准定义（维度、权重、1–5 分锚点），按 version 版本化 |
+| `diagnosis.ts` | 逐题打分、报告 scores / plan、报告视图 |
+| `weakness.ts` | 短板：模型输出的草稿、报告里的条目、写回档案后的合并条目 |
+| `growth.ts` | 成长曲线：按技能的折线点与总分折线 |
+| `usage.ts` | 单场用量与成本（成本可能为 null，表示没配单价） |
 | `embedding.ts` | 向量维度 1024 |
 
 **不放什么**：数据库列定义（在 `backend/db/schema`）、业务流程（在 `backend/core`）。

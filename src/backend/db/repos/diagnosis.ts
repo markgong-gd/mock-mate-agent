@@ -2,9 +2,11 @@
  * @file 【后端·db】诊断报告、短板与技能得分历史仓储
  * rubrics 是全局表，没有 userId；其余每个方法都带 userId 并写进 where。
  * ensureReport 用 unique(session_id, rubric_version) 做幂等：面试结束触发几次都只有一份报告。
- * saveDiagnosis 在一个事务里写报告、短板和技能得分，诊断图的 persist 节点因此可以重跑。
+ * saveDiagnosis 在一个事务里写报告、短板、技能得分和历史短板的状态，诊断图的 persist 节点因此可以重跑。
+ * 注意：这一层不判断"短板该不该标 closed"（db 不许依赖 shared/domain），规则在 domain/weakness/merge.ts，
+ * 由诊断图算好后把 weaknessStatusChanges 传进来。
  */
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { newId } from '@/shared/common/ids';
 import type { DiagnosisScores, DiagnosisStatus, TrainingPlan } from '@/shared/schemas/diagnosis';
 import type { RubricDefinition, RubricSeed } from '@/shared/schemas/rubric';
@@ -195,6 +197,75 @@ export async function listWeaknessesByReport(userId: string, reportId: string): 
     .orderBy(desc(weaknesses.severity), asc(weaknesses.tag));
 }
 
+/** 跨报告的全部短板行，给 domain/weakness/merge 合并成档案视图（R-P3） */
+export interface UserWeaknessRow extends WeaknessRow {
+  reportId: string;
+  sessionId: string;
+  seenAt: number;
+}
+
+export async function listUserWeaknesses(
+  userId: string,
+  opts: { exceptReportId?: string } = {},
+): Promise<UserWeaknessRow[]> {
+  const where = opts.exceptReportId
+    ? and(eq(weaknesses.userId, userId), ne(weaknesses.reportId, opts.exceptReportId))
+    : eq(weaknesses.userId, userId);
+  const rows = await getDb()
+    .select({
+      id: weaknesses.id,
+      tag: weaknesses.tag,
+      title: weaknesses.title,
+      detail: weaknesses.detail,
+      severity: weaknesses.severity,
+      status: weaknesses.status,
+      evidenceTurnId: weaknesses.evidenceTurnId,
+      evidenceQuote: weaknesses.evidenceQuote,
+      reportId: weaknesses.reportId,
+      sessionId: weaknesses.sessionId,
+      createdAt: weaknesses.createdAt,
+    })
+    .from(weaknesses)
+    .where(where)
+    .orderBy(asc(weaknesses.createdAt));
+  return rows.map(({ createdAt, ...row }) => ({ ...row, seenAt: createdAt.getTime() }));
+}
+
+/** 成长曲线的点：技能分 + 它所属报告的岗位和时间（R-C3-5） */
+export interface SkillScorePoint {
+  reportId: string;
+  sessionId: string;
+  jobTitle: string;
+  tag: string;
+  score: number;
+  sampleCount: number;
+  rubricVersion: string;
+  createdAt: Date;
+}
+
+export async function listSkillScoreHistory(userId: string, limit = 500): Promise<SkillScorePoint[]> {
+  return getDb()
+    .select({
+      reportId: skillScoreHistory.reportId,
+      sessionId: skillScoreHistory.sessionId,
+      jobTitle: jobTargets.title,
+      tag: skillScoreHistory.tag,
+      score: skillScoreHistory.score,
+      sampleCount: skillScoreHistory.sampleCount,
+      rubricVersion: skillScoreHistory.rubricVersion,
+      createdAt: skillScoreHistory.createdAt,
+    })
+    .from(skillScoreHistory)
+    .innerJoin(interviewSessions, eq(interviewSessions.id, skillScoreHistory.sessionId))
+    .innerJoin(
+      jobTargets,
+      and(eq(jobTargets.id, interviewSessions.jobTargetId), eq(jobTargets.userId, userId)),
+    )
+    .where(eq(skillScoreHistory.userId, userId))
+    .orderBy(asc(skillScoreHistory.createdAt))
+    .limit(limit);
+}
+
 export interface SaveDiagnosisInput {
   userId: string;
   reportId: string;
@@ -210,9 +281,11 @@ export interface SaveDiagnosisInput {
     evidenceTurnId: string | null;
     evidenceQuote: string;
   }[];
+  /** 写回档案时要改状态的历史短板行，由 domain/weakness/merge 算出（规则不在这一层） */
+  weaknessStatusChanges?: readonly { id: string; status: WeaknessStatus }[];
 }
 
-/** 单事务：报告 + 短板 + 技能得分历史。重跑时按唯一键 upsert，不会重复累加 */
+/** 单事务：报告 + 本场短板 + 技能得分历史 + 历史短板的状态写回。重跑时按唯一键 upsert，不会重复累加 */
 export async function saveDiagnosis(input: SaveDiagnosisInput): Promise<void> {
   const db = getDb();
   await db.transaction(async (tx) => {
@@ -264,6 +337,19 @@ export async function saveDiagnosis(input: SaveDiagnosisInput): Promise<void> {
           rubricVersion: input.rubricVersion,
         })),
       );
+    }
+
+    // 同一状态的行合成一条 update：一场面试最多几条短板，不值得逐行往返
+    const changes = input.weaknessStatusChanges ?? [];
+    const byStatus = new Map<WeaknessStatus, string[]>();
+    for (const change of changes) {
+      byStatus.set(change.status, [...(byStatus.get(change.status) ?? []), change.id]);
+    }
+    for (const [status, ids] of byStatus) {
+      await tx
+        .update(weaknesses)
+        .set({ status, updatedAt: new Date() })
+        .where(and(eq(weaknesses.userId, input.userId), inArray(weaknesses.id, ids)));
     }
   });
 }

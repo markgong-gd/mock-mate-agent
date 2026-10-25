@@ -93,7 +93,7 @@
 | 主力模型 | 按 §5 注册表切换；免费（智谱 Flash、硅基流动小模型）/ 付费（DeepSeek、百炼等）/ 本地 Ollama | 持续评估，P5 用评测结果定 | `.env` 的 `PROVIDER_*` / `MODEL_*` | 按评测结果 |
 | 向量化模型与维度 | 百炼 text-embedding / 硅基流动 bge-m3 / Ollama bge-m3 | P1（P1-08） | `MODEL_EMBED`、`EMBEDDING_DIM` + 重新向量化（§5.4） | **已定：列固定 `vector(1024)`**（2026-10-24）。与 bge-m3 族对齐，低于 pgvector HNSW 的 2000 维上限。`EMBEDDING_DIM` 不是 1024 时启动失败（换维度要新迁移）。未接真实向量模型时用进程内 n-gram 哈希，模型 id 为 `fake:ngram-1024`（`.env` 写 `MODEL_EMBED=fake:hash` 也走这条）。真实模型示例：`ollama:bge-m3`、`siliconflow:BAAI/bge-m3`；deepseek kind 没有 embeddings。`embed_model` 与当前模型不同的行会重新向量化。检索 SQL 必须带 `user_id`，距离用 `<=>`，相似度 `1 - distance`，索引 `vector_cosine_ops` |
 | 重排 | 不重排 / bge-reranker（`MODEL_RERANK`） | P2a（P2a-04），按检索评测结果 | `agent/retrieval/rerank.ts`、`QUESTION_RETRIEVAL` | **已定：不重排；启用 pg_trgm 关键词召回 + RRF**（2026-10-25）。`keyword: true`，`rerank: false`，`rrfK: 60`。关键词路用 `%`，中文短词再按技能标签 ILIKE 纳入候选，然后按 `similarity` 排序。`evals/retrieval/questions.json` 上，n-gram 哈希向量的 mean recall@5 ≥ 0.8。以后要重排，只改 `rerank.ts` 并把常量里的 `rerank` 打开 |
-| 长期记忆 | 仅业务表 / 业务表 + LangGraph `PostgresStore` | P3（P3-06） | `agent/graphs/memory/*` | 仅业务表 |
+| 长期记忆 | 仅业务表 / 业务表 + LangGraph `PostgresStore` | P3（P3-06） | `agent/graphs/memory/*` | **已定：仅业务表**（2026-10-25）。闭环需要的三件事都在业务表里能查：短板（`weaknesses` + `domain/weakness/merge` 去重）、技能趋势（`skill_score_history`）、复训计划（`diagnosis_reports.plan`）。再加一层 Store 会多出"同一结论两处存、删除要删两遍、口径可能不一致"的成本，而当下拿不到额外收益。重新评估的触发条件：需要存"跨岗位的自由文本洞察"（例如"这个人讲项目总是先讲结论"）且无法落成结构化字段时 |
 | 语音方案 | 半双工：ASR + TTS（豆包 / 百炼）；实时：百炼 Qwen-Omni-Realtime / 豆包端到端实时语音 | P4（P4-01） | `agent/voice/*` + `MODEL_ASR` / `MODEL_TTS` / `MODEL_REALTIME` | 先半双工 |
 | 正式鉴权 | Better Auth（Drizzle 适配器） | **待补项**，对外开放前（03 B-01） | `backend/server/middleware/dev-user.ts` → `auth.ts`；登录页与路由守卫 | 单用户 `devUser` + 部署时 `accessGate` |
 
@@ -183,7 +183,7 @@ src/backend/core     用例：权限、事务、幂等、加锁、调图、入�
 src/shared/domain    纯函数：路由判断 / 出题分配 / factRefGuard / aggregate / merge / skillGap
 src/shared/schemas   Zod 领域定义
 src/shared/env       环境变量校验（server.ts 仅后端 / client.ts 仅前端）
-src/shared/common    ctx / 错误码 / id / 日志
+src/shared/common    ctx / 错误码 / id / 日志 / PII 脱敏规则
 ```
 
 | 块 | 层目录 | 职责 |
@@ -262,10 +262,10 @@ mock-mate-agent/
 │   │   │   ├── diagnosis/{state.ts, graph.ts, nodes/*.ts}
 │   │   │   ├── resume/{state.ts, graph.ts, nodes/*.ts}
 │   │   │   ├── extract/{profile.ts, job.ts}
-│   │   │   └── memory/                 # P3：LangGraph Store（可选）
-│   │   ├── llm/{providers,registry,caps,fake,structured,resilience,redact,usage}.ts
+│   │   │   └── memory/                 # 评估后决定不启用（§1.3 P3-06），目录不建
+│   │   ├── llm/{providers,registry,caps,fake,structured,resilience,redact,pricing,usage}.ts
 │   │   ├── prompts/*.ts                # 带版本号的 Prompt
-│   │   ├── tools/                      # 只读工具：读档案 / JD / 历史短板 / 检索
+│   │   ├── tools/weaknesses.ts         # 只读工具：历史短板（userId 从 config 取）
 │   │   ├── retrieval/{question-retriever.ts, fact-retriever.ts, rerank.ts}
 │   │   ├── rubrics/v1.ts
 │   │   └── voice/                      # P4
@@ -277,9 +277,9 @@ mock-mate-agent/
 │       │   ├── diagnosis/aggregate.ts
 │       │   ├── weakness/merge.ts
 │       │   └── matching/skill-gap.ts
-│       ├── schemas/                    # common / profile / job / resume / interview / rubric / diagnosis / weakness / question
+│       ├── schemas/                    # common / profile / job / resume / interview / rubric / diagnosis / weakness / question / growth / usage
 │       ├── env/{load.ts, server.ts, client.ts}
-│       └── common/{ctx.ts, errors.ts, ids.ts, logger.ts}
+│       └── common/{ctx.ts, errors.ts, ids.ts, logger.ts, pii.ts}
 ├── db/
 │   ├── migrations/                     # drizzle-kit 生成；0000 启用 vector、pg_trgm
 │   └── seeds/{questions,rubrics}/      # 题库（JSONL）、Rubric
@@ -313,11 +313,11 @@ mock-mate-agent/
 | 简历 | `POST /api/resumes/generate`（流式）、`GET / PUT /api/resumes/:id`、`GET /api/resumes/:id/export` |
 | 面试 | `POST /api/interviews`（流式，返回首题）、`GET /api/interviews/:id`、`POST /api/interviews/:id/chat`（流式）、`POST /api/interviews/:id/finish` |
 | 诊断 | `GET /api/reports`（可带 `?sessionId=`）、`GET /api/reports/:id`、`POST /api/reports/:id/retry` |
-| 训练 / 成长 | `POST /api/training`（专项训练）、`GET /api/growth` |
+| 训练 / 成长 | `POST /api/training`（专项训练，入参 `{ reportId, tag }`）、`GET /api/growth` |
 | 用量 | `GET /api/usage/sessions/:id` |
 | 隐私 | `DELETE /api/privacy/me` |
 | 语音（P4） | `POST /api/voice/transcribe`、`POST /api/voice/tts`；实时模式 `GET /api/voice/realtime`（WebSocket） |
-| 调试（仅开发） | `GET /api/dev/threads/:threadId/state`、`GET /api/dev/graphs/:name/mermaid` |
+| 调试（仅开发） | `GET /api/dev/threads/:threadId/state`、`GET /api/dev/graphs/:name/mermaid`、`POST /api/dev/faults`（故障注入） |
 
 ### 4.2 流式协议
 
@@ -393,7 +393,8 @@ ALLOWED_PROVIDERS=*            # 对外开放时改为国内已备案 provider �
 | `agent/llm/caps.ts` | 模型能力表（内置常见模型 + `MODEL_CAPS_*` 覆盖） |
 | `agent/llm/structured.ts` | 结构化输出：按能力选择方式 → Zod 校验 → 修复重试 |
 | `agent/llm/resilience.ts` | 超时、重试、降级 |
-| `agent/llm/redact.ts` | 发送给模型前脱敏 |
+| `agent/llm/redact.ts` | 发送给模型前脱敏（规则在 `shared/common/pii.ts`，日志出口共用同一套） |
+| `agent/llm/pricing.ts` | 按 `provider:model` 配单价（元 / 百万 token），成本现算不落库 |
 | `agent/llm/usage.ts` | 回调处理器，写 `llm_calls` |
 
 ### 5.2 能力表与结构化输出降级
@@ -449,8 +450,12 @@ Zod 校验 --失败--> 携带校验错误修复重试 1 次 --仍失败--> 走 r
 ### 5.6 用量与成本
 
 - `agent/llm/usage.ts` 实现 LangChain `BaseCallbackHandler`，在 `handleLLMEnd` 中写入 `llm_calls`：`user_id`、`session_id`、`function_id`、`alias`、`provider`、`model`、`prompt_version`、`input_tokens`、`output_tokens`、`latency_ms`、`status`。**不记录正文**。
-- 成本 = Token × 单价，单价在 `agent/llm/pricing.ts` 中按 `provider:model` 配置。
-- 单场面试 Token 上限（`backend/core/config.ts`）超出时返回 `BUDGET_EXCEEDED`。
+- 挂载点在 `backend/core/*.service.ts`（`createUsageHandler`）。**诊断的调用也挂在面试的 `session_id` 上**，所以"单场成本"= 面试 + 这一场的诊断。
+- 成本 = Token × 单价，单价在 `agent/llm/pricing.ts` 中按 `provider:model` 配置（`provider:*` 作为兜底）。
+  - **单价不落库**：会调价，存下来就对不上账；读接口 `GET /api/usage/sessions/:id` 每次现算。
+  - 单价没配时返回 `null`（页面显示"未配置单价"），不默认 0——0 会被误读成"不花钱"。
+- 单场面试 Token 上限（`backend/core/config.ts` 的 `limits.sessionTokenBudget`）在 `POST /api/interviews/:id/chat` 调模型之前检查，超出返回 `BUDGET_EXCEEDED`。已落库的轮次和报告不受影响，用户可以结束本场并查看诊断。前端按错误码判断"能不能重试"：`BUDGET_EXCEEDED` 这类不可重试的错误不显示重试按钮，改为引导结束本场。
+- 副作用提醒：用量回调会在模型调用的回调链里 `await` 一次写库。并行分支（诊断的 `Send` 打分）里如果有一个分支快速失败，其它还在途中的分支会被一起中止、写入丢失，重跑时会多打一两题——分数不会叠加（按唯一键 upsert），只是多花一点 Token。
 
 ---
 
@@ -601,7 +606,8 @@ POST /api/interviews/:id/finish 停在 wait_answer 时 resume { abort: true }；
                                 停在别的节点时 updateState 后 stream(null)，走到 finalize
 ```
 
-- **专项训练**（R-C2-5）：`POST /api/training { weaknessId }` 创建 `mode = drill` 的 session，`plan_questions` 只针对该短板召回，其余流程相同。
+- **专项训练**（R-C2-5）：`POST /api/training { reportId, tag }` 创建 `kind = drill` 的 session，技能标签写进 `settings.drillTag`，`plan_questions` 只按它召回，其余流程相同。只允许练这份报告真的判出来的短板，避免用任意标签刷题库。
+- **短板优先出题**（R-C2-4）：`plan_questions` 先调 `tools.getOpenWeaknesses`（`userId` 从 config 取），把短板和 JD 技能点一起作为检索查询，再由 `domain.allocate` 把命中短板的题整组排到前面。
 - **语音**（P4）：转写终稿作为 `answer` 走同一个 `chat` 用例；`ask` 的文本交 TTS 播放；打断 = 停止播放，状态不变。文字与语音共用图与诊断（R-C2-10）。
 
 ### 6.5 C3 诊断图
@@ -622,14 +628,20 @@ POST /api/interviews/:id/finish 停在 wait_answer 时 resume { abort: true }；
         -> aggregate (domain.aggregate：维度分 / 总分 / 技能分，不调模型)
         -> extract_weaknesses (judge 模型只给 [T1] 编号，图回填 turnId 并校验原话)
         -> plan_training (复训计划，只保留已确认短板的条目)
-        -> persist (单事务：report(status = done) / weaknesses / skill_score_history)
+        -> persist (单事务：report(status = done) / weaknesses / skill_score_history
+                    + 短板写回档案：domain/weakness/merge 算出历史行的状态变化)
         -> END
   -> 失败 status = failed + error（pg-boss 重试；最终失败可手动重试）
 
 前端: GET /api/reports/:id 轮询状态；POST /api/reports/:id/retry 手动重试
-下次面试开场: tools.getOpenWeaknesses -> plan_questions 优先召回短板相关题（P3）
+下次面试开场: tools.getOpenWeaknesses -> plan_questions 优先召回短板相关题
 ```
 
+- **短板写回档案**（R-P3）：`weaknesses` 按报告存（`unique(report_id, tag)`），档案要看的是"这个技能现在算不算短板"，所以读写两边都过 `domain/weakness/merge` 按 `tag` 去重：
+  - `occurrences` = 这个技能累计被判为短板的次数；`severity` 取历史与本次的较大值（某一次给低了不淡化反复出现的问题）。
+  - 状态流转只看"本场考到了没有"：本次又被判为短板 → `open`；没出现且本场该技能 ≥ 4 分 → `closed`；≥ 3 分 → `improving`；分更低 → 退回 `open`；**本场完全没问到这个技能 → 状态不动**（没问到 ≠ 已解决）。
+  - 规则是纯函数，`backend/db` 不允许依赖 `shared/domain`，所以由诊断图算好 `weaknessStatusChanges` 再交给 `saveDiagnosis` 写进同一个事务。
+  - 档案页（`GET /api/profile`）和出题（`tools.getOpenWeaknesses`）读的是同一个合并结果，口径只有一处。
 - **Rubric 版本化**（R-C3-6）：定义的源头是 `db/seeds/rubrics/<version>.json`，`pnpm db:seed` 校验后 upsert 进 `rubrics`（同一时间只有一个 `active`）。新报告用当前 `active` 版本，旧报告按自己记录的 `rubric_version` 读定义，所以改标准必须新建版本而不是原地改。
 - **证据不可编造**（R-C3-2）：Prompt 里把轮次编号成 `[T1] 题：… ｜ 答：…`，模型只能引用编号；编号对不上的短板直接丢弃，原话不在该轮回答里时换成真实摘录。
 - **重新诊断不叠加**：`scores` 是唯一的追加型字段，`load` 返回空数组把它清空（LangGraph 里收到空数组即重置），所以同一个 thread 重跑不会把分数累加。
@@ -645,10 +657,11 @@ POST /api/interviews/:id/finish 停在 wait_answer 时 resume { abort: true }；
 | 会话情景记忆          | interview_turns                          | 诊断、恢复、删除       |
 | Agent 工作记忆        | LangGraph 存档 state.messages             | 单场对话上下文         |
 |                     | (thread = sessionId, langgraph.*)        |                     |
-| 长期洞察(可选, P3)    | LangGraph PostgresStore                  | 跨场次的面试表现总结   |
-|                     | namespace = [userId, "insights"]         |                     |
 +---------------------+------------------------------------------+---------------------+
 ```
+
+**不再设"长期洞察"层**：P3-06 评估后决定只用业务表（见 §1.3）。跨会话的个性化全部来自
+`weaknesses`（经 `domain/weakness/merge` 去重）与 `skill_score_history`，一处存储、一处删除。
 
 ### 6.7 调试与可视化
 
@@ -779,7 +792,7 @@ pgboss.*     任务队列（pg-boss 自管）
 |---|---|---|---|
 | 1 | 业务数据 | 删除 `users` 行，级联删除全部用户数据（含 `llm_calls`、`consents`）；同一事务写入 `deletion_tombstones`（哈希 userId + 时间） | 同步 |
 | 2 | LangGraph 存档 | 删除前先取出该用户全部 `sessionId` 与 `reportId`，逐个 `checkpointer.deleteThread()` | 同步 |
-| 3 | LangGraph Store | 若启用，删除 `[userId, *]` 命名空间 | 同步 |
+| 3 | LangGraph Store | 未启用（§1.3 P3-06），没有要删的命名空间 | — |
 | 4 | 队列 | 取消并删除 `pgboss.*` 中载荷含该用户 id 的任务 | 同步 |
 | 5 | 会话 | 清除访问 Cookie（正式鉴权上线后为吊销全部会话） | 同步 |
 | 6 | 日志 | 日志不含正文与明文 PII（只有 requestId、哈希 userId、业务 id），保留期 ≤ 30 天 | 到期清除 |
@@ -844,7 +857,7 @@ pgboss.*     任务队列（pg-boss 自管）
 | CSRF | 同源 + `SameSite=Lax` Cookie；写操作校验 `Origin` | N-6 |
 | 上传 | 不上传原文件，只上传提取后的文本；后端限制长度 | N-1、N-2 |
 | Prompt 注入 | JD / 简历文本作为数据用分隔符包裹；工具只读且按用户限定 | N-6 |
-| PII 脱敏 | `agent/llm/redact` 在发送给模型、写日志前掩码手机号、邮箱、证件号；联系方式不进模型 | N-3 |
+| PII 脱敏 | 规则在 `shared/common/pii`（零依赖），两个出口各包一层：`agent/llm/redact` 管发给模型的文本（extract / interview / diagnosis / resume 全部节点），`shared/common/logger` 的 `hooks` + `formatters` 管日志（含 `err.message` 与 `stack`）。联系方式在前端先抽走，不进模型 | N-3 |
 | 同意 | 上传前单独同意，记录到 `consents`，后端校验 | N-4 |
 | 一键删除 | §8.4 | N-5 |
 | 偏见 | Rubric 与 Prompt 不使用受保护特征；`evals/bias` 回归 | N-8 |
@@ -1021,14 +1034,38 @@ export declare function routeAfterEvaluate(input: {
 // src/agent/retrieval/question-retriever.ts
 export interface QuestionQuery {
   skills: string[];
-  weaknessIds?: string[];
+  /** 一条 JD 要求或一条历史短板的描述，和 skills 一起向量化 */
+  text?: string;
   difficulty?: [number, number];
   types?: QuestionType[];
   k: number;
 }
 export declare class QuestionRetriever extends BaseRetriever {
-  retrieve(ctx: RequestCtx, q: QuestionQuery): Promise<RetrievedQuestion[]>;
+  retrieve(q: QuestionQuery): Promise<RetrievedQuestion[]>;
 }
+
+// src/shared/domain/weakness/merge.ts —— 短板写回档案（R-P3）
+export declare function mergeWeaknesses(input: {
+  existing: readonly ExistingWeakness[];
+  /** 本次诊断确认的短板；只读档案时不传 */
+  incoming?: readonly IncomingWeakness[];
+  /** 本场技能分，用来判断旧短板是否已改善 */
+  skills?: readonly { tag: string; score: number }[];
+}): { profile: MergedWeakness[]; statusChanges: { id: string; status: WeaknessStatus }[] };
+
+// src/agent/tools/weaknesses.ts —— userId 只从 config 取，不做成模型可见的参数
+export declare function getOpenWeaknesses(
+  config: LangGraphRunnableConfig,
+  opts?: { limit?: number },
+): Promise<MergedWeakness[]>;
+
+// src/agent/llm/pricing.ts —— 元 / 百万 token，按 provider:model 配置
+export declare function estimateCost(input: {
+  provider: string;
+  model: string;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+}): number | null;
 
 // src/agent/voice/types.ts —— P4
 export interface VoiceProvider {
@@ -1092,6 +1129,7 @@ export interface ApiError {
 | 2026-10-24 | P1-08：向量列固定 1024 维；默认同进程 n-gram 哈希（`fake:ngram-1024`），换 bge-m3 只改 `MODEL_EMBED` 并按 `embed_model` 重嵌。简历生成用 `streamMode: "custom"` 吐 JSON 文本（`text/plain`），前端 `useObject` 边解析边渲染；回声图仍走 UI Message Stream |
 | 2026-10-25 | P2a：题库表、面试会话与轮次、216 道前端题、`embed-questions`、QuestionRetriever（关键词 + RRF，不重排）。面试图 plan → ask → wait_answer → evaluate → 追问/下一题/结束。创建面试只返回 id，第一题由随后的 chat 拉起。finalize 只把场次标成 finished，诊断留到 P2b |
 | 2026-10-25 | P2b：Rubric 版本化（源头 `db/seeds/rubrics/*.json` → `rubrics` 表，报告记录所用版本）、`diagnosis_reports` / `weaknesses` / `skill_score_history` 建表定稿。诊断图用 `Send` 并行逐题打分 + 追加型 Reducer 汇总，`thread = diag:<reportId>`；短板证据由图回填校验（模型只给 `[T1]` 编号）。触发点由 finalize 节点调整为 `core.interview` 在场次变成 finished 后触发（`agent/graphs` 不允许依赖 `backend/core`），`agent/rubrics` 只负责把定义渲染成提示词文本。报告页雷达图手写 SVG，不引图表库 |
+| 2026-10-25 | P3：复训闭环 + 用量 + PII 脱敏。§1.3 新增结论 P3-06 **仅业务表、不启用 LangGraph Store**。短板写回档案用 `domain/weakness/merge`（按 tag 去重、严重度取较大值、状态只在"本场考到"时才流转），规则由诊断图算出后随 `saveDiagnosis` 写进同一事务（`backend/db` 不许依赖 `shared/domain`）。新增 `agent/tools/weaknesses.ts`（`userId` 只从 config 取，ESLint 只给 `agent/tools` 开了 `agent/graphs/config.ts` 一个口子）；专项训练用 `interview_sessions.kind = 'drill'` + `settings.drillTag`，不另开链路。PII 规则下沉到 `shared/common/pii.ts`，模型入口与 pino 日志共用（日志侧用 `hooks.logMethod` + `formatters.log` 兜底）。成本用 `agent/llm/pricing.ts` 现算不落库，单价缺失返回 `null`；诊断的调用也挂在面试 `session_id` 上。副作用：用量回调会在模型调用链里 `await` 一次写库，并行打分有分支快速失败时其余分支会被一起中止，续跑可能多打一两题（分数按唯一键 upsert，不会叠加），p2b 的相应断言已放宽并写明原因 |
 
 ### 本次重写的选型变更
 

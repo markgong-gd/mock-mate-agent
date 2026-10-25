@@ -4,6 +4,7 @@
  *       POST /api/dev/echo/:threadId/chat   推进一轮，返回 SSE（UI Message Stream）
  *       GET  /api/dev/threads/:id/state     查看 LangGraph 存档与历史 checkpoint
  *       GET  /api/dev/graphs/:name/mermaid  输出图结构 Mermaid
+ *       POST /api/dev/faults                故障注入：让接下来 n 次假模型调用失败（P3-09）
  */
 import { createUIMessageStreamResponse } from 'ai';
 import { Hono } from 'hono';
@@ -14,6 +15,7 @@ import {
   getEchoThread,
   getGraphMermaid,
   getThreadState,
+  injectLlmFailures,
   streamEchoTurn,
   type DevGraphName,
 } from '@/backend/core/dev.service';
@@ -26,6 +28,7 @@ const threadParam = z.object({ threadId: z.string().regex(/^[A-Za-z0-9:_-]{1,100
 const graphQuery = z.object({ graph: graphName.default('echo') });
 const graphParam = z.object({ name: graphName });
 const echoBody = z.object({ answer: z.string().max(4000).default('') });
+const faultBody = z.object({ llmFailures: z.number().int().min(0).max(10) });
 
 /** 流式响应头：禁止代理缓冲（02 §4.2） */
 export const SSE_HEADERS = { 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' };
@@ -62,4 +65,7 @@ export const devRoutes = (enabled: boolean) =>
         signal: c.req.raw.signal,
       });
       return createUIMessageStreamResponse({ stream, headers: SSE_HEADERS });
-    });
+    })
+    .post('/faults', validate('json', faultBody), (c) =>
+      c.json(injectLlmFailures(c.req.valid('json').llmFailures)),
+    );

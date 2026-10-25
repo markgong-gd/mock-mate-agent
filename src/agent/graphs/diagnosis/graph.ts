@@ -4,6 +4,7 @@
  * score_answer 并行跑，结果靠 state.scores 的追加型 reducer 汇总；aggregate 只调 domain.aggregate，不调模型。
  * 短板的证据在这里回填：模型只给 [T1] 编号和一句原话，编号对不上或原话不在那一轮里就换成真实摘录，
  * 保证“每个短板都有证据”（R-C3-2）。落库放在 persist 单事务里，中途失败可以从断点续跑。
+ * persist 还负责把短板写回档案（R-P3）：读历史短板 → domain/weakness/merge 算状态变化 → 同一事务更新。
  */
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import {
@@ -14,7 +15,13 @@ import {
   type BaseCheckpointSaver,
   type LangGraphRunnableConfig,
 } from '@langchain/langgraph';
-import { getReport, saveDiagnosis, getRubric, type SaveDiagnosisInput } from '@/backend/db/repos/diagnosis';
+import {
+  getReport,
+  listUserWeaknesses,
+  saveDiagnosis,
+  getRubric,
+  type SaveDiagnosisInput,
+} from '@/backend/db/repos/diagnosis';
 import { listInterviewTurns } from '@/backend/db/repos/interviews';
 import { getJob } from '@/backend/db/repos/jobs';
 import { getQuestionsByIds } from '@/backend/db/repos/questions';
@@ -35,6 +42,7 @@ import {
 } from '@/agent/prompts/diagnosis';
 import { rubricDimensionKeys, rubricPromptText } from '@/agent/rubrics/v1';
 import { aggregate } from '@/shared/domain/diagnosis/aggregate';
+import { mergeWeaknesses, type ExistingWeakness } from '@/shared/domain/weakness/merge';
 import { AppError } from '@/shared/common/errors';
 import {
   answerScoreSchema,
@@ -63,6 +71,8 @@ export interface DiagnosisLoaded {
 
 export interface DiagnosisGraphDeps {
   load(userId: string, reportId: string): Promise<DiagnosisLoaded>;
+  /** 这个用户在**其它**报告里的短板，用来算写回档案时的状态变化 */
+  loadHistory(userId: string, reportId: string): Promise<ExistingWeakness[]>;
   persist(input: SaveDiagnosisInput): Promise<void>;
   /** 测试注入：某一题真正调模型之前抛错，用来验证失败后续跑 */
   beforeScore?: (turnId: string) => void;
@@ -120,6 +130,7 @@ async function defaultLoad(userId: string, reportId: string): Promise<DiagnosisL
 
 export const defaultDiagnosisDeps: DiagnosisGraphDeps = {
   load: defaultLoad,
+  loadHistory: (userId, reportId) => listUserWeaknesses(userId, { exceptReportId: reportId }),
   persist: saveDiagnosis,
 };
 
@@ -300,11 +311,27 @@ export function buildDiagnosisGraph(
     return { plan: { ...plan, items: plan.items.filter((item) => tags.has(item.tag)) } };
   }
 
+  /**
+   * 落库 + 短板写回档案（R-P3）。
+   * 合并规则是纯函数（domain/weakness/merge），这里只负责"读历史 → 算 → 和本场结果一起写进同一个事务"。
+   */
   async function persist(state: DiagnosisStateType, config: LangGraphRunnableConfig) {
     const { userId } = getGraphCtx(config);
     if (!state.aggregated || !state.plan || !state.rubric) {
       throw new AppError('INTERNAL', '诊断图缺少打分结果');
     }
+    const history = await deps.loadHistory(userId, state.reportId);
+    const seenAt = Date.now();
+    const { statusChanges } = mergeWeaknesses({
+      existing: history,
+      incoming: state.weaknesses.map((item) => ({
+        ...item,
+        reportId: state.reportId,
+        sessionId: state.sessionId,
+        seenAt,
+      })),
+      skills: state.aggregated.skills,
+    });
     await deps.persist({
       userId,
       reportId: state.reportId,
@@ -313,6 +340,7 @@ export function buildDiagnosisGraph(
       scores: state.aggregated,
       plan: state.plan,
       weaknesses: state.weaknesses,
+      weaknessStatusChanges: statusChanges,
     });
     return {};
   }

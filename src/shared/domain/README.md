@@ -12,7 +12,9 @@
 | `retrieval/recall.ts` | recall@k，给检索小样本用 |
 | `interview/route.ts` | 评估后 follow_up / next / finish |
 | `interview/allocate.ts` | 出题：短板优先、技能覆盖、难度梯度 |
+| `diagnosis/aggregate.ts` | 维度分 / 总分 / 技能分聚合 |
+| `weakness/merge.ts` | 短板写回档案：按 tag 去重、严重度取较大值、状态流转（open / improving / closed） |
 
-还没写（02 §3）：
-- `diagnosis/aggregate.ts`：维度分 / 总分聚合
-- `weakness/merge.ts`：短板合并
+**为什么 merge 在这里而不是在 repo 里**：`backend/db` 不允许依赖 `shared/domain`。
+诊断图算好 `statusChanges` 再交给 `saveDiagnosis` 写，规则和 SQL 分开，规则可以脱库单测。
+同一个函数还被"读档案短板"复用（只传 `existing`），保证页面和出题看到的是同一套口径。

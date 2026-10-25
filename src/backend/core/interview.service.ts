@@ -39,6 +39,7 @@ import {
 } from '@/shared/schemas/interview';
 import { requestDiagnosis } from './diagnosis.service';
 import { createUsageHandler } from './usage';
+import { assertSessionBudget } from './usage.service';
 
 const LOCK_NS = 'mockmate:interview';
 
@@ -251,6 +252,8 @@ async function openChatStream(
   const session = await getInterviewSession(ctx.userId, input.sessionId);
   if (!session) throw new AppError('NOT_FOUND', '这场面试不存在');
   if (session.status === 'finished') throw new AppError('CONFLICT', '这场面试已经结束');
+  // 预算在调模型之前查：超了就不再推进，已落库的轮次不受影响（N-12）
+  await assertSessionBudget(ctx.userId, session.id);
 
   const graph = getInterviewGraph();
   const cfg = threadConfig(ctx, input.sessionId);

@@ -3,6 +3,7 @@
  * 设置会原样放进 interview_sessions.settings。评估结果是 judge 模型的结构化输出。
  */
 import { z } from 'zod';
+import { skillTagSchema } from './skill-tags';
 
 export const INTERVIEW_STYLES = ['supportive', 'standard', 'strict'] as const;
 export type InterviewStyle = (typeof INTERVIEW_STYLES)[number];
@@ -28,6 +29,11 @@ export const interviewSettingsSchema = z
     difficultyMax: z.number().int().min(1).max(5),
     style: z.enum(INTERVIEW_STYLES),
     maxFollowUps: z.number().int().min(INTERVIEW_LIMITS.followUps.min).max(INTERVIEW_LIMITS.followUps.max),
+    /**
+     * 专项训练（R-C2-5）只练这一个技能标签：plan_questions 只按它召回。
+     * 可选，所以 kind = 'normal' 的旧场次不受影响。
+     */
+    drillTag: skillTagSchema.optional(),
   })
   .refine((s) => s.difficultyMin <= s.difficultyMax, {
     message: '难度下限不能高于上限',
@@ -39,6 +45,12 @@ export type InterviewSettings = z.infer<typeof interviewSettingsSchema>;
 export const interviewCreateRequestSchema = z.object({
   jobId: z.uuid(),
   settings: interviewSettingsSchema,
+});
+
+/** 从报告页一键进入专项训练：只给短板的技能标签，其余设置由后端按复训计划推导 */
+export const trainingCreateRequestSchema = z.object({
+  reportId: z.uuid(),
+  tag: skillTagSchema,
 });
 
 export const interviewChatRequestSchema = z.object({
@@ -105,6 +117,7 @@ export const interviewSummarySchema = z.object({
   id: z.uuid(),
   jobId: z.uuid(),
   jobTitle: z.string(),
+  kind: z.enum(INTERVIEW_KINDS),
   status: z.enum(INTERVIEW_STATUSES),
   settings: interviewSettingsSchema,
   createdAt: z.string(),

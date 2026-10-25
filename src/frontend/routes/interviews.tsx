@@ -23,6 +23,7 @@ import { createInterviewTransport } from '@/frontend/features/interview/transpor
 import { useSessionReport } from '@/frontend/features/reports/queries';
 import { ApiClientError, parseStreamError } from '@/frontend/lib/api';
 import { cn } from '@/frontend/lib/utils';
+import type { AppErrorCode } from '@/shared/common/errors';
 import {
   INTERVIEW_LIMITS,
   INTERVIEW_STYLES,
@@ -31,6 +32,7 @@ import {
   type InterviewStyle,
   type InterviewView,
 } from '@/shared/schemas/interview';
+import { skillLabel } from '@/shared/schemas/skill-tags';
 
 const FIELD =
   'border-input bg-transparent focus-visible:border-ring focus-visible:ring-ring/50 h-9 w-full rounded-md border px-3 text-sm outline-none focus-visible:ring-[3px]';
@@ -50,6 +52,15 @@ const PHASE_LABEL: Record<InterviewProgress['phase'], string> = {
 };
 
 const STATUS_LABEL = { pending: '未开始', running: '进行中', finished: '已结束' } as const;
+
+/** 和 ApiClientError.retryable 同一套口径：其余错误码（如 BUDGET_EXCEEDED）重试没有意义 */
+const RETRYABLE_CODES: AppErrorCode[] = [
+  'RATE_LIMITED',
+  'LLM_TIMEOUT',
+  'LLM_UNAVAILABLE',
+  'LLM_SCHEMA_INVALID',
+  'INTERNAL',
+];
 
 type InterviewUIMessage = UIMessage<
   never,
@@ -221,10 +232,13 @@ function InterviewSetup() {
                 {item.settings.difficultyMin}–{item.settings.difficultyMax}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex items-center gap-2">
               <Badge variant={item.status === 'finished' ? 'secondary' : 'outline'}>
                 {STATUS_LABEL[item.status]}
               </Badge>
+              {item.kind === 'drill' && item.settings.drillTag && (
+                <Badge variant="outline">{skillLabel(item.settings.drillTag)}专项</Badge>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -306,7 +320,14 @@ function InterviewChat({ interview }: { interview: InterviewView }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{interview.jobTitle}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {interview.jobTitle}
+            {interview.kind === 'drill' && interview.settings.drillTag && (
+              <Badge variant="outline" className="ml-2 align-middle">
+                {skillLabel(interview.settings.drillTag)}专项训练
+              </Badge>
+            )}
+          </h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {STYLE_LABEL[interview.settings.style]}风格 · 难度 {interview.settings.difficultyMin}–
             {interview.settings.difficultyMax} · 模拟练习，由模型生成
@@ -377,17 +398,29 @@ function InterviewChat({ interview }: { interview: InterviewView }) {
                 <span className="text-destructive">
                   {streamErr.message}（{streamErr.code}）
                 </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    clearError();
-                    if (messages.at(-1)?.role === 'user') void sendMessage();
-                    else kickOff();
-                  }}
-                >
-                  重试
-                </Button>
+                {/* 预算用尽、参数不合法这类错误重试也没用，只给可重试的错误码放按钮（N-9） */}
+                {RETRYABLE_CODES.includes(streamErr.code) ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      clearError();
+                      if (messages.at(-1)?.role === 'user') void sendMessage();
+                      else kickOff();
+                    }}
+                  >
+                    重试
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={finish.isPending}
+                    onClick={() => finish.mutate()}
+                  >
+                    结束并看报告
+                  </Button>
+                )}
               </div>
             )}
             {finish.isError && <p className="text-destructive text-sm">{finish.error.message}</p>}

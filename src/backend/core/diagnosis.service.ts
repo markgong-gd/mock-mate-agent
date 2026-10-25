@@ -25,6 +25,7 @@ import { AppError } from '@/shared/common/errors';
 import { logger } from '@/shared/common/logger';
 import type { DiagnosisReportSummary, DiagnosisReportView } from '@/shared/schemas/diagnosis';
 import { skillLabel } from '@/shared/schemas/skill-tags';
+import { createUsageHandler } from './usage';
 
 export interface DiagnoseRequest {
   userId: string;
@@ -111,7 +112,13 @@ export async function runDiagnosis(input: DiagnoseRequest, requestId = `diag-${i
     const snap = await graph.getState(cfg);
     // 停在某个节点上就从断点续跑（不重新 load、不重复打分）；跑完过或没跑过都从头开始
     const resume = Boolean(snap.config?.configurable?.checkpoint_id) && snap.next.length > 0;
-    await graph.invoke(resume ? null : { reportId: input.reportId }, cfg);
+    await graph.invoke(resume ? null : { reportId: input.reportId }, {
+      ...cfg,
+      // 用量挂到面试的 sessionId（不是 diag: 线程 id），这样"单场成本"包含诊断（N-12）
+      callbacks: [
+        createUsageHandler({ userId: input.userId, requestId, sessionId: report.sessionId }),
+      ],
+    });
     logger.info({ reportId: input.reportId, requestId }, 'diagnosis done');
   } catch (error) {
     const message = error instanceof Error ? error.message : '诊断失败';

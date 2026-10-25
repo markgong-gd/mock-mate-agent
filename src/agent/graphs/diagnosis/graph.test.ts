@@ -11,6 +11,7 @@ import {
 } from '@/agent/graphs/diagnosis/graph';
 import type { ScoreTask } from '@/agent/graphs/diagnosis/state';
 import type { SaveDiagnosisInput } from '@/backend/db/repos/diagnosis';
+import type { ExistingWeakness } from '@/shared/domain/weakness/merge';
 import type { RubricDefinition } from '@/shared/schemas/rubric';
 import { useTestEnv } from '../../../../tests/helpers/env';
 
@@ -59,7 +60,11 @@ const shallowTask = task({
 });
 
 function deps(
-  over: { tasks?: ScoreTask[]; roleTitle?: string } & Partial<DiagnosisGraphDeps> = {},
+  over: {
+    tasks?: ScoreTask[];
+    roleTitle?: string;
+    history?: ExistingWeakness[];
+  } & Partial<DiagnosisGraphDeps> = {},
 ): DiagnosisGraphDeps & { saved: SaveDiagnosisInput[] } {
   const saved: SaveDiagnosisInput[] = [];
   const loaded: DiagnosisLoaded = {
@@ -72,12 +77,30 @@ function deps(
   return {
     saved,
     load: async () => loaded,
+    loadHistory: async () => over.history ?? [],
     persist: async (input) => {
       saved.push(input);
     },
     ...(over.beforeScore ? { beforeScore: over.beforeScore } : {}),
   };
 }
+
+const historyRow = (
+  id: string,
+  tag: string,
+  status: ExistingWeakness['status'],
+): ExistingWeakness => ({
+  id,
+  tag,
+  title: `${tag} 以前就是短板`,
+  detail: '历史记录',
+  severity: 2,
+  status,
+  reportId: '00000000-0000-4000-8000-00000000d900',
+  sessionId: '00000000-0000-4000-8000-00000000d901',
+  evidenceQuote: '旧证据',
+  seenAt: 1,
+});
 
 const cfg = (threadId: string) => ({
   configurable: { thread_id: threadId, userId: 'user-1', requestId: 'req-1' },
@@ -154,6 +177,28 @@ describe('diagnosis graph', () => {
     expect(saved.scores.dimensions.map((d) => d.score)).toEqual([0, 0, 0, 0]);
     expect(saved.weaknesses).toEqual([]);
     expect(saved.plan.items).toEqual([]);
+  });
+
+  it('短板写回档案：本次又出现的标回 open，本场没考好的退回 open，没考到的不动', async () => {
+    const graphDeps = deps({
+      history: [
+        // 上次标成已解决，这次 react 又被判成短板
+        historyRow('w-react', 'react', 'closed'),
+        // 本场 performance 只有一句"不知道"，分数很低，不能继续算在改善中
+        historyRow('w-perf', 'performance', 'improving'),
+        // 本场完全没问到 testing：没问到 != 已解决，状态不动
+        historyRow('w-testing', 'testing', 'open'),
+      ],
+    });
+    const graph = buildDiagnosisGraph(new MemorySaver(), graphDeps);
+    await run(graph, 'diag-merge', { reportId: REPORT_ID });
+
+    const saved = graphDeps.saved[0]!;
+    const changes = [...(saved.weaknessStatusChanges ?? [])].sort((a, b) => a.id.localeCompare(b.id));
+    expect(changes).toEqual([
+      { id: 'w-perf', status: 'open' },
+      { id: 'w-react', status: 'open' },
+    ]);
   });
 
   it('某一题打分失败后用同一存档续跑，已经打好的分不会重复', async () => {

@@ -47,3 +47,25 @@ export const weaknessItemSchema = z.object({
 });
 
 export type WeaknessItem = z.infer<typeof weaknessItemSchema>;
+
+/**
+ * 写回档案后的短板（R-P3）：同一技能跨多场面试只留一条，occurrences 是累计出现次数。
+ * 由 domain/weakness/merge.ts 合并产出，不是一张表。
+ */
+export const profileWeaknessSchema = z.object({
+  tag: z.string(),
+  label: z.string(),
+  title: z.string(),
+  detail: z.string(),
+  severity: z.number().int(),
+  status: weaknessStatusSchema,
+  occurrences: z.number().int().min(1),
+  firstSeenAt: z.string(),
+  lastSeenAt: z.string(),
+  /** 最近一次判定出这条短板的报告与面试，用于跳回证据 */
+  reportId: z.uuid(),
+  sessionId: z.uuid(),
+  evidenceQuote: z.string(),
+});
+
+export type ProfileWeakness = z.infer<typeof profileWeaknessSchema>;

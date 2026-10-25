@@ -10,7 +10,8 @@ import { getJob } from '@/backend/db/repos/jobs';
 import { getProfile, listFactSnippets } from '@/backend/db/repos/profile';
 import { insertResumeVersion } from '@/backend/db/repos/resumes';
 import { getGraphCtx } from '@/agent/graphs/config';
-import { getChatRunnable } from '@/agent/llm/resilience';
+import { redactText } from '@/agent/llm/redact';
+import { getChatRunnable, llmTimeoutSignal } from '@/agent/llm/resilience';
 import { extractJson, generateStructured } from '@/agent/llm/structured';
 import { FactRetriever } from '@/agent/retrieval/fact-retriever';
 import { RESUME_PROMPT_VERSION, RESUME_SYSTEM, resumeHuman } from '@/agent/prompts/resume';
@@ -76,6 +77,10 @@ async function defaultRetrieve(userId: string, job: JobView): Promise<RetrievedF
   return chosen.map((fact) => ({ id: fact.id, experienceId: fact.experienceId, text: fact.text, score: 0 }));
 }
 
+/**
+ * 事实原文是用户确认过的档案内容，仍可能夹着联系方式（"项目联系人 138..."），
+ * 所以进 Prompt 之前统一过一遍脱敏（N-3、03 P3-07）。factRefs 用 id，脱敏不影响溯源。
+ */
 async function defaultGenerate(
   input: ResumeGenerateInput,
   onDelta: (text: string) => void,
@@ -86,15 +91,23 @@ async function defaultGenerate(
     new HumanMessage(
       resumeHuman({
         jobTitle: input.job.title,
-        jobSummary: input.job.summary,
-        requirements: input.job.requirements,
-        facts: input.facts,
+        jobSummary: redactText(input.job.summary).text,
+        requirements: input.job.requirements.map((req) => ({
+          ...req,
+          description: redactText(req.description).text,
+        })),
+        facts: input.facts.map((fact) => ({ id: fact.id, text: redactText(fact.text).text })),
       }),
     ),
   ];
   const model = getChatRunnable('chat');
   let text = '';
-  const stream = await model.stream(messages, { ...config, runName: 'resume.generate' });
+  const stream = await model.stream(messages, {
+    ...config,
+    // ollama / fake 这类模型类没有自带超时，统一在这里套一层（N-9）
+    signal: llmTimeoutSignal(config.signal),
+    runName: 'resume.generate',
+  });
   for await (const chunk of stream) {
     const piece = typeof chunk.content === 'string' ? chunk.content : '';
     if (!piece) continue;

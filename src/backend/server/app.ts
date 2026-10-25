@@ -13,6 +13,7 @@ import { requestId } from './middleware/request-id';
 import { accessRoutes } from './routes/access';
 import { consentRoutes } from './routes/consents';
 import { devRoutes } from './routes/dev';
+import { growthRoutes } from './routes/growth';
 import { healthRoutes } from './routes/health';
 import { interviewRoutes } from './routes/interviews';
 import { jobRoutes } from './routes/jobs';
@@ -21,6 +22,8 @@ import { metaRoutes } from './routes/meta';
 import { profileRoutes } from './routes/profile';
 import { reportRoutes } from './routes/reports';
 import { resumeRoutes } from './routes/resumes';
+import { trainingRoutes } from './routes/training';
+import { usageRoutes } from './routes/usage';
 import type { AppEnv } from './types';
 
 export interface AppConfig {
@@ -46,7 +49,10 @@ const apiRoutes = (cfg: AppConfig) =>
     .route('/jobs', jobRoutes())
     .route('/resumes', resumeRoutes())
     .route('/interviews', interviewRoutes())
+    .route('/training', trainingRoutes())
     .route('/reports', reportRoutes())
+    .route('/growth', growthRoutes())
+    .route('/usage', usageRoutes())
     .route('/dev', devRoutes(cfg.enableDevRoutes));
 
 /**

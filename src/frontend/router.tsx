@@ -30,6 +30,7 @@ export const router = createBrowserRouter([
       { path: 'interviews/:interviewId', lazy: page(() => import('./routes/interviews')) },
       { path: 'reports', lazy: page(() => import('./routes/reports')) },
       { path: 'reports/:reportId', lazy: page(() => import('./routes/reports')) },
+      { path: 'growth', lazy: page(() => import('./routes/growth')) },
       { path: 'dev/echo', lazy: page(() => import('./routes/dev-echo')) },
       ...NAV_ITEMS.filter((n) => n.phase).map((n) => ({
         path: n.to.slice(1),

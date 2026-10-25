@@ -1,6 +1,8 @@
 /**
  * @file 【智能体·llm】离线假模型（provider kind = fake）
  * 做什么：无需 API Key 即可跑通全链路。Prompt 含 TASK 标记时返回结构化 JSON，否则保持回声问答。
+ * 故障注入（P3-09）：injectFakeFaults(n) 让接下来 n 次调用抛错，用来验证
+ *   “模型失败时前端有提示、已写入的回答不丢、重试能从断点续跑”。只在开发路由与测试里调用。
  */
 import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import { BaseChatModel, type BaseChatModelParams } from '@langchain/core/language_models/chat_models';
@@ -14,6 +16,24 @@ const QUESTIONS = [
   '在这个项目里，你遇到的最大技术难点是什么？怎么解决的？',
   '如果重新做一次，你会在哪些方面改进？',
 ];
+
+/** 待注入的失败次数。进程级计数，和模型实例缓存无关 */
+let pendingFaults = 0;
+
+/** 让接下来 n 次假模型调用抛错（n <= 0 表示清空） */
+export function injectFakeFaults(n: number): number {
+  pendingFaults = Math.max(0, Math.trunc(n));
+  return pendingFaults;
+}
+
+export const pendingFakeFaults = () => pendingFaults;
+
+function consumeFault() {
+  if (pendingFaults <= 0) return;
+  pendingFaults -= 1;
+  // 用 Error 而不是 AppError：要模拟的是 provider 侧的原始故障，归一化交给 resilience
+  throw new Error('injected fake llm failure');
+}
 
 const textOf = (m: BaseMessage): string =>
   typeof m.content === 'string'
@@ -73,6 +93,7 @@ export class FakeEchoChatModel extends BaseChatModel {
   }
 
   override async _generate(messages: BaseMessage[]): Promise<ChatResult> {
+    consumeFault();
     const text = this.respond(messages);
     return {
       generations: [
@@ -86,6 +107,7 @@ export class FakeEchoChatModel extends BaseChatModel {
     options: this['ParsedCallOptions'],
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
+    consumeFault();
     const text = this.respond(messages);
     const pieces = text.startsWith('{') ? (text.match(/[\s\S]{1,24}/g) ?? [text]) : Array.from(text);
     // delay 为 0 时也要让出事件循环。图在 stream() 返回前就开始跑，

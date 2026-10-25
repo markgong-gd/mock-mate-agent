@@ -2,17 +2,28 @@
  * @file 【前端·页面】诊断报告
  * /reports 列出历史报告；/reports/:reportId 展示雷达图 + 逐题点评 + 短板证据 + 复训计划 + Rubric 版本。
  * 报告是异步生成的，pending / running 期间由 queries 里的轮询刷新，失败后可以点重试。
+ * 每条短板和每条复训计划都能一键开专项训练（R-C2-5），底部还有这一场的 Token 与成本（N-12）。
  */
-import { Link, useParams } from 'react-router';
-import { AlertTriangle, BarChart3, Loader2, RotateCcw } from 'lucide-react';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router';
+import { AlertTriangle, BarChart3, Dumbbell, Loader2, RotateCcw, Wallet } from 'lucide-react';
 import { Badge } from '@/frontend/components/ui/badge';
 import { Button } from '@/frontend/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/frontend/components/ui/card';
-import { useReport, useReports, useRetryReport } from '@/frontend/features/reports/queries';
+import {
+  useCreateTraining,
+  useReport,
+  useReports,
+  useRetryReport,
+  useSessionUsage,
+} from '@/frontend/features/reports/queries';
 import { RubricRadar } from '@/frontend/features/reports/radar';
+import { ApiClientError } from '@/frontend/lib/api';
 import type { DiagnosisReportView, DiagnosisStatus, ScoredAnswer } from '@/shared/schemas/diagnosis';
 import type { InterviewTurnView } from '@/shared/schemas/interview';
 import type { RubricDefinition } from '@/shared/schemas/rubric';
+import { skillLabel } from '@/shared/schemas/skill-tags';
+import type { SessionUsage } from '@/shared/schemas/usage';
 import type { WeaknessItem } from '@/shared/schemas/weakness';
 
 const STATUS_LABEL: Record<DiagnosisStatus, string> = {
@@ -89,6 +100,24 @@ function ReportList() {
 function ReportDetail({ reportId }: { reportId: string }) {
   const report = useReport(reportId);
   const retry = useRetryReport(reportId);
+  const training = useCreateTraining();
+  const navigate = useNavigate();
+  const [trainingError, setTrainingError] = useState('');
+
+  const startTraining = (tag: string) => {
+    setTrainingError('');
+    training.mutate(
+      { reportId, tag },
+      {
+        onSuccess: (session) => void navigate(`/interviews/${session.id}`),
+        onError: (err) => setTrainingError(err instanceof ApiClientError ? err.message : '创建专项训练失败'),
+      },
+    );
+  };
+  const drill = {
+    start: startTraining,
+    pending: training.isPending ? (training.variables?.tag ?? null) : null,
+  };
 
   if (report.isPending) return <Loader2 className="text-muted-foreground size-5 animate-spin" />;
   if (report.isError) return <p className="text-destructive text-sm">{report.error.message}</p>;
@@ -171,9 +200,11 @@ function ReportDetail({ reportId }: { reportId: string }) {
             </Card>
           </div>
 
-          <WeaknessSection weaknesses={data.weaknesses} turns={data.turns} />
-          <PlanSection plan={data.plan} />
+          <WeaknessSection weaknesses={data.weaknesses} turns={data.turns} drill={drill} />
+          <PlanSection plan={data.plan} drill={drill} />
+          {trainingError && <p className="text-destructive text-sm">{trainingError}</p>}
           <AnswerSection answers={data.scores.answers} turns={data.turns} rubric={data.rubric} />
+          <UsageSection sessionId={data.sessionId} />
           <RubricSection rubric={data.rubric} version={data.rubricVersion} />
         </>
       )}
@@ -181,13 +212,38 @@ function ReportDetail({ reportId }: { reportId: string }) {
   );
 }
 
-function WeaknessSection({ weaknesses, turns }: { weaknesses: WeaknessItem[]; turns: InterviewTurnView[] }) {
+/** 一键进入专项训练：pending 存的是正在创建的那个 tag，避免整排按钮一起转圈 */
+interface Drill {
+  start: (tag: string) => void;
+  pending: string | null;
+}
+
+function DrillButton({ tag, drill }: { tag: string; drill: Drill }) {
+  return (
+    <Button size="sm" variant="outline" disabled={drill.pending !== null} onClick={() => drill.start(tag)}>
+      {drill.pending === tag ? <Loader2 className="animate-spin" /> : <Dumbbell />}
+      专项训练
+    </Button>
+  );
+}
+
+function WeaknessSection({
+  weaknesses,
+  turns,
+  drill,
+}: {
+  weaknesses: WeaknessItem[];
+  turns: InterviewTurnView[];
+  drill: Drill;
+}) {
   const seqOf = (turnId: string | null) => turns.find((turn) => turn.id === turnId)?.seq;
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">短板与证据</CardTitle>
-        <CardDescription>每条短板都附上你当时的原话，可以回到对话里核对。</CardDescription>
+        <CardDescription>
+          每条短板都附上你当时的原话，可以回到对话里核对。短板会写回职业档案，下一场面试优先问这些点。
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {weaknesses.length === 0 && <p className="text-muted-foreground text-sm">本场没有识别出明显短板。</p>}
@@ -199,6 +255,9 @@ function WeaknessSection({ weaknesses, turns }: { weaknesses: WeaknessItem[]; tu
               <Badge variant={item.severity >= 3 ? 'destructive' : 'secondary'}>
                 {SEVERITY_LABEL[item.severity] ?? item.severity}
               </Badge>
+              <span className="ml-auto">
+                <DrillButton tag={item.tag} drill={drill} />
+              </span>
             </div>
             <p className="text-muted-foreground text-sm">{item.detail}</p>
             <blockquote className="border-muted text-muted-foreground border-l-2 pl-3 text-sm italic">
@@ -214,7 +273,7 @@ function WeaknessSection({ weaknesses, turns }: { weaknesses: WeaknessItem[]; tu
   );
 }
 
-function PlanSection({ plan }: { plan: DiagnosisReportView['plan'] }) {
+function PlanSection({ plan, drill }: { plan: DiagnosisReportView['plan']; drill: Drill }) {
   if (!plan) return null;
   return (
     <Card>
@@ -227,9 +286,12 @@ function PlanSection({ plan }: { plan: DiagnosisReportView['plan'] }) {
         {plan.items.map((item) => (
           <div key={item.tag} className="space-y-1.5 rounded-md border px-3 py-2.5 text-sm">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{item.tag}</Badge>
+              <Badge variant="outline">{skillLabel(item.tag)}</Badge>
               <span className="font-medium">{item.focus}</span>
               <span className="text-muted-foreground">建议 {item.questionCount} 题</span>
+              <span className="ml-auto">
+                <DrillButton tag={item.tag} drill={drill} />
+              </span>
             </div>
             <ul className="text-muted-foreground list-disc space-y-1 pl-5">
               {item.actions.map((action, index) => (
@@ -283,6 +345,73 @@ function AnswerSection({
             {answer.gap && <p className="text-muted-foreground">缺的：{answer.gap}</p>}
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+const money = (value: number | null) => (value === null ? '未配置单价' : `¥${value.toFixed(4)}`);
+
+/** 单场用量：面试 + 这一场的诊断，都挂在同一个 sessionId 上（N-12、02 §5.6） */
+function UsageSection({ sessionId }: { sessionId: string }) {
+  const usage = useSessionUsage(sessionId);
+  if (usage.isPending || usage.isError || !usage.data) return null;
+  const { totals, byFunction, budget }: SessionUsage = usage.data;
+  if (totals.calls === 0) return null;
+  const percent = Math.min(100, Math.round((budget.used / budget.tokenLimit) * 100));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Wallet className="size-4" />
+          本场用量与成本
+        </CardTitle>
+        <CardDescription>
+          含这场面试和它的诊断，共 {totals.calls} 次模型调用。成本按配置的单价估算，仅供参考。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="flex flex-wrap gap-x-6 gap-y-1">
+          <span>
+            输入 <span className="font-medium">{totals.inputTokens}</span> token
+          </span>
+          <span>
+            输出 <span className="font-medium">{totals.outputTokens}</span> token
+          </span>
+          <span>
+            估算成本 <span className="font-medium">{money(totals.cost)}</span>
+          </span>
+          {totals.errors > 0 && <span className="text-destructive">失败 {totals.errors} 次</span>}
+        </div>
+        <div className="space-y-1">
+          <div className="text-muted-foreground flex items-center justify-between text-xs">
+            <span>单场上限 {budget.tokenLimit} token</span>
+            <span>
+              已用 {budget.used}（{percent}%）
+            </span>
+          </div>
+          <div className="bg-muted h-2 overflow-hidden rounded-full">
+            <div
+              className={budget.exceeded ? 'bg-destructive h-full' : 'bg-primary h-full'}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          {budget.exceeded && (
+            <p className="text-destructive text-xs">已达上限，这场面试不能再继续，但报告不受影响。</p>
+          )}
+        </div>
+        <div className="space-y-1">
+          {byFunction.map((item) => (
+            <div key={item.functionId} className="text-muted-foreground flex items-center gap-3 text-xs">
+              <span className="w-44 shrink-0 font-mono">{item.functionId}</span>
+              <span className="w-16 shrink-0 text-right">{item.calls} 次</span>
+              <span className="w-28 shrink-0 text-right">{item.inputTokens + item.outputTokens} token</span>
+              <span className="w-24 shrink-0 text-right">{money(item.cost)}</span>
+              <span className="w-20 shrink-0 text-right">{item.avgLatencyMs} ms</span>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
