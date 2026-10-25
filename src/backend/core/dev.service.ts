@@ -10,6 +10,7 @@ import type { UIMessage, UIMessageChunk } from 'ai';
 import { getCheckpointer } from '@/agent/graphs/checkpointer';
 import type { GraphConfigurable } from '@/agent/graphs/config';
 import { buildEchoGraph, type EchoGraph } from '@/agent/graphs/echo/graph';
+import { buildInterviewGraph } from '@/agent/graphs/interview/graph';
 import type { EchoStateType } from '@/agent/graphs/echo/state';
 import { graphToUIStream } from '@/agent/graphs/stream';
 import type { RequestCtx } from '@/shared/common/ctx';
@@ -25,7 +26,10 @@ export function setEchoGraphForTesting(g: EchoGraph | undefined) {
   echoGraph = g;
 }
 
-const GRAPHS = { echo: getEchoGraph } as const;
+const GRAPHS = {
+  echo: getEchoGraph,
+  interview: () => buildInterviewGraph(getCheckpointer()),
+} as const;
 export type DevGraphName = keyof typeof GRAPHS;
 export const DEV_GRAPH_NAMES = Object.keys(GRAPHS) as DevGraphName[];
 

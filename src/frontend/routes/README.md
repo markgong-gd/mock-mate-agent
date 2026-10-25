@@ -13,6 +13,7 @@
 | `resumes.tsx` | `/resumes` | 选择岗位并流式生成 |
 | `resume-editor.tsx` | `/resumes/:resumeId` | 编辑；保存成为新版本 |
 | `resume-print.tsx` | `/resumes/:resumeId/print` | 浏览器打印。未溯源时接口返回 409 |
+| `interviews.tsx` | `/interviews`、`/interviews/:interviewId` | 选设置、文字面试。刷新后从已落库轮次恢复 |
 | `placeholder.tsx` | 未上线页面 | 显示计划上线阶段 |
 | `not-found.tsx` | `*` | 404 |
 

@@ -16,5 +16,6 @@ features/<领域>/
 | `profile/` | 同意、抽取、保存档案 |
 | `jobs/` | 岗位列表、创建、匹配度展示 |
 | `resumes/` | 版本列表和预览。生成流不走这里，页面直接用 useObject |
+| `interview/` | 面试列表、创建、结束。对话流在页面里用 useChat |
 
-以后：`interview/`、`reports/`、`growth/`。
+以后：`reports/`、`growth/`。

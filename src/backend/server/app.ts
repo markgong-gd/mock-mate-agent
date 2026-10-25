@@ -14,6 +14,7 @@ import { accessRoutes } from './routes/access';
 import { consentRoutes } from './routes/consents';
 import { devRoutes } from './routes/dev';
 import { healthRoutes } from './routes/health';
+import { interviewRoutes } from './routes/interviews';
 import { jobRoutes } from './routes/jobs';
 import { llmRoutes } from './routes/llm';
 import { metaRoutes } from './routes/meta';
@@ -43,6 +44,7 @@ const apiRoutes = (cfg: AppConfig) =>
     .route('/profile', profileRoutes())
     .route('/jobs', jobRoutes())
     .route('/resumes', resumeRoutes())
+    .route('/interviews', interviewRoutes())
     .route('/dev', devRoutes(cfg.enableDevRoutes));
 
 /**

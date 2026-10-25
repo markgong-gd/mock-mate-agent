@@ -31,9 +31,14 @@ export default function JobDetailPage() {
           ))}
         </CardContent>
       </Card>
-      <Link to={`/resumes?jobId=${job.data.job.id}`} className="text-sm underline">
-        用这个岗位生成简历
-      </Link>
+      <div className="flex gap-4">
+        <Link to={`/resumes?jobId=${job.data.job.id}`} className="text-sm underline">
+          用这个岗位生成简历
+        </Link>
+        <Link to={`/interviews?jobId=${job.data.job.id}`} className="text-sm underline">
+          用这个岗位模拟面试
+        </Link>
+      </div>
     </div>
   );
 }

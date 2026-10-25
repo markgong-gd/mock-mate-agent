@@ -2,8 +2,8 @@
 
 | 路径 | 说明 |
 |---|---|
-| `migrations/` | drizzle-kit 生成的 SQL；`0000` 启用 vector / pg_trgm，`0001` 建 users / llm_calls；`meta/` 自动维护勿手改 |
-| `seeds/questions/` | 题库 JSONL（P2a） |
+| `migrations/` | drizzle-kit 生成的 SQL；`0000` 启用 vector / pg_trgm，`0001` 建 users / llm_calls，`0003` 建题库和面试表；`meta/` 自动维护勿手改 |
+| `seeds/questions/` | 题库规范、`frontend.jsonl`（216 题）和生成脚本 `build-bank.mjs` |
 | `seeds/rubrics/` | 评分标准（P2b） |
 
 表结构的源头在 `src/backend/db/schema`：改 schema → `pnpm db:generate` → `pnpm db:migrate`。

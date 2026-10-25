@@ -8,3 +8,5 @@ export * from './profile';
 export * from './job';
 export * from './resume';
 export * from './consent';
+export * from './question';
+export * from './interview';

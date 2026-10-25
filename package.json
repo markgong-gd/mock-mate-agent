@@ -22,6 +22,7 @@
     "test:watch": "vitest --project unit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/backend/db/migrate-cli.ts",
+    "db:seed": "tsx src/backend/core/seed-cli.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

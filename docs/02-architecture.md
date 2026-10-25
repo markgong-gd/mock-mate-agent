@@ -92,7 +92,7 @@
 | 部署平台 | 魔搭 Docker 创空间 / 自有机器 + 内网穿透 / 轻量服务器 | P0（P0-06） | `Dockerfile`、`deploy/`、`env` | **暂定：魔搭**（2026-10-23）。镜像本地实测通过（见 §10.3）；平台侧实测待上线后补记 |
 | 主力模型 | 按 §5 注册表切换；免费（智谱 Flash、硅基流动小模型）/ 付费（DeepSeek、百炼等）/ 本地 Ollama | 持续评估，P5 用评测结果定 | `.env` 的 `PROVIDER_*` / `MODEL_*` | 按评测结果 |
 | 向量化模型与维度 | 百炼 text-embedding / 硅基流动 bge-m3 / Ollama bge-m3 | P1（P1-08） | `MODEL_EMBED`、`EMBEDDING_DIM` + 重新向量化（§5.4） | **已定：列固定 `vector(1024)`**（2026-10-24）。与 bge-m3 族对齐，低于 pgvector HNSW 的 2000 维上限。`EMBEDDING_DIM` 不是 1024 时启动失败（换维度要新迁移）。未接真实向量模型时用进程内 n-gram 哈希，模型 id 为 `fake:ngram-1024`（`.env` 写 `MODEL_EMBED=fake:hash` 也走这条）。真实模型示例：`ollama:bge-m3`、`siliconflow:BAAI/bge-m3`；deepseek kind 没有 embeddings。`embed_model` 与当前模型不同的行会重新向量化。检索 SQL 必须带 `user_id`，距离用 `<=>`，相似度 `1 - distance`，索引 `vector_cosine_ops` |
-| 重排 | 不重排 / bge-reranker（`MODEL_RERANK`） | P2a（P2a-04），按检索评测结果 | `agent/retrieval/rerank.ts` | 不重排 |
+| 重排 | 不重排 / bge-reranker（`MODEL_RERANK`） | P2a（P2a-04），按检索评测结果 | `agent/retrieval/rerank.ts`、`QUESTION_RETRIEVAL` | **已定：不重排；启用 pg_trgm 关键词召回 + RRF**（2026-10-25）。`keyword: true`，`rerank: false`，`rrfK: 60`。关键词路用 `%`，中文短词再按技能标签 ILIKE 纳入候选，然后按 `similarity` 排序。`evals/retrieval/questions.json` 上，n-gram 哈希向量的 mean recall@5 ≥ 0.8。以后要重排，只改 `rerank.ts` 并把常量里的 `rerank` 打开 |
 | 长期记忆 | 仅业务表 / 业务表 + LangGraph `PostgresStore` | P3（P3-06） | `agent/graphs/memory/*` | 仅业务表 |
 | 语音方案 | 半双工：ASR + TTS（豆包 / 百炼）；实时：百炼 Qwen-Omni-Realtime / 豆包端到端实时语音 | P4（P4-01） | `agent/voice/*` + `MODEL_ASR` / `MODEL_TTS` / `MODEL_REALTIME` | 先半双工 |
 | 正式鉴权 | Better Auth（Drizzle 适配器） | **待补项**，对外开放前（03 B-01） | `backend/server/middleware/dev-user.ts` → `auth.ts`；登录页与路由守卫 | 单用户 `devUser` + 部署时 `accessGate` |
@@ -567,7 +567,7 @@ GET  /api/resumes/:id/export
      |   follow_up | next              | finish
      +-------------+                   v
                               +----------------+  status = finished
-                              |    finalize    |  创建 diagnosis_reports(pending) + 入队 diagnose
+                              |    finalize    |  status = finished。诊断报告与入队 diagnose 留到 P2b
                               +-------+--------+
                                       v
                                      END
@@ -576,22 +576,29 @@ GET  /api/resumes/:id/export
 **单轮请求时序**：
 
 ```text
-POST /api/interviews            { jobId, settings }
-  -> 创建 session -> graph.stream(初始输入, thread=sessionId)
-  -> plan_questions -> ask(首题流式) -> wait_answer(中断)，流结束
+POST /api/interviews            { jobId, settings }  -> 201 { id, ... }
+  只创建 session（pending）。第一题不在这次请求里流式返回：
+  页面马上跳到 /interviews/:id，由用户点「开始」再调 chat。
+  这样路由切换不会把创建请求的流掐断。
 
-POST /api/interviews/:id/chat   { answer, idempotencyKey }   -> 流式
-  1. 校验归属；pg_advisory_xact_lock(sessionId) 防止同一场面试并发推进
-  2. idempotencyKey 已存在 -> 回放该轮的 assistant turn（非流式），结束
-  3. 先写 user turn（回答不丢）
-  4. 读取存档 state.next:
-       = wait_answer -> graph.stream(new Command({ resume: { turnId, answer } }))
-       = 其它节点     -> graph.stream(null)        # 上次中途失败，从失败节点续跑
-  5. evaluate -> 路由 -> ask(流式) -> wait_answer(中断) | finalize
-  6. 流中附带 data-interview-state
+POST /api/interviews/:id/chat   { answer, idempotencyKey }   -> UI Message Stream
+  1. 校验归属。pg_try_advisory_lock 占住这场 session，直到流读完才放开。
+     锁是会话级的，不是事务级：事务锁会在返回 Response 时放开，第二请求会排队而不是 409。
+     没拿到锁直接 409。
+  2. 还没有存档：空 answer 从 plan_questions 开始（第一题）。
+  3. 有回答：idempotencyKey 必填。已有 user turn，且后面已经有 assistant turn，
+     并且图停在 wait_answer 或已结束 -> 回放那段 assistant 文本。
+     已有 user turn 但还停在 wait_answer -> 用已落库的回答 resume，不再插一条。
+     已有 user turn 且 next 是别的节点 -> graph.stream(null)，从失败节点续跑。
+  4. 新回答：先写 user turn 并提交，再 Command({ resume })。
+     空 answer 且 next 不是 wait_answer -> stream(null) 续跑。
+     空 answer 且正在等回答 -> 400，避免把中断节点空推一次。
+  5. evaluate -> routeAfterEvaluate -> ask(流式) -> wait_answer | finalize
+  6. 流里带 data-interview-state。评估 JSON 打 nostream，不进面试官气泡。
 
-GET  /api/interviews/:id        恢复：interview_turns + 存档中的进度 -> 前端重建对话
-POST /api/interviews/:id/finish 用户主动结束 -> graph.updateState 标记结束 -> finalize
+GET  /api/interviews/:id        恢复：interview_turns + 存档进度
+POST /api/interviews/:id/finish 停在 wait_answer 时 resume { abort: true }；
+                                停在别的节点时 updateState 后 stream(null)，走到 finalize
 ```
 
 - **专项训练**（R-C2-5）：`POST /api/training { weaknessId }` 创建 `mode = drill` 的 session，`plan_questions` 只针对该短板召回，其余流程相同。
@@ -1073,6 +1080,7 @@ export interface ApiError {
 | 2026-10-23 | P0 完成：§1.3 流式适配定为 `@ai-sdk/langchain`、部署平台暂定魔搭；§1.4 登记主版本；§10.3 补本地实测结果。实现补充：provider 新增 `fake` kind（离线假模型，无 Key 时跑通链路）；`llm` 层只定义 `UsageCallbackHandler`，写库的 sink 由 `core/usage.ts` 注入（保持 llm 不依赖 db） |
 | 2026-10-23 | 目录重组：`src/` 按 `frontend` / `backend/{server,core,db,jobs}` / `agent/{graphs,llm,prompts,...}` / `shared/{domain,schemas,env,common}` 四块物理分目录；§2.2、§2.3、§3 与全文路径同步更新，ESLint 分层规则随之调整；新增 [04 · 代码地图](04-code-map.md) |
 | 2026-10-24 | P1-08：向量列固定 1024 维；默认同进程 n-gram 哈希（`fake:ngram-1024`），换 bge-m3 只改 `MODEL_EMBED` 并按 `embed_model` 重嵌。简历生成用 `streamMode: "custom"` 吐 JSON 文本（`text/plain`），前端 `useObject` 边解析边渲染；回声图仍走 UI Message Stream |
+| 2026-10-25 | P2a：题库表、面试会话与轮次、216 道前端题、`embed-questions`、QuestionRetriever（关键词 + RRF，不重排）。面试图 plan → ask → wait_answer → evaluate → 追问/下一题/结束。创建面试只返回 id，第一题由随后的 chat 拉起。finalize 只把场次标成 finished，诊断留到 P2b |
 
 ### 本次重写的选型变更
 

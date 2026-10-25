@@ -9,6 +9,8 @@ import { findSkillTags, skillLabel, type SkillTag } from '@/shared/schemas/skill
 const TASK_PROFILE = 'TASK: profile.extract';
 const TASK_JOB = 'TASK: job.extract';
 const TASK_RESUME = 'TASK: resume.generate';
+const TASK_ASK = 'TASK: interview.ask';
+const TASK_EVALUATE = 'TASK: interview.evaluate';
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
@@ -67,7 +69,8 @@ function jobDraft(raw: string) {
       ? skills.map((s) => ({
           label: s.label,
           tag: s.tag,
-          importance: /加分|优先|了解/.test(text) && skills.length > 1 && s === skills.at(-1) ? 'nice' : 'must',
+          importance:
+            /加分|优先|了解/.test(text) && skills.length > 1 && s === skills.at(-1) ? 'nice' : 'must',
           description: '',
         }))
       : [
@@ -105,10 +108,42 @@ function resumeDraft(raw: string) {
   };
 }
 
-/** 命中任务标记时返回 JSON 字符串，否则返回 undefined，假对话模型继续走回声 */
+function block(prompt: string, name: string): string {
+  const matched = new RegExp(`${name}:\\n([\\s\\S]*?)\\nEND_${name}`).exec(prompt);
+  return matched?.[1]?.trim() ?? '';
+}
+
+/** 浅回答追问，具体回答进入下一题。只认 ANSWER 块，避免把题目本身判成回答 */
+function evaluateDraft(prompt: string) {
+  const answer = block(prompt, 'ANSWER');
+  const vaguePhrase = /不知道|不太清楚|没做过|说不上|忘记了|随便/.test(answer);
+  const vague = answer.length < 12 || (vaguePhrase && answer.length < 80);
+  return {
+    depth: vague ? 1 : 4,
+    needFollowUp: vague,
+    reason: vague ? '回答太短或没有具体做法，需要追问一次' : '回答里有具体做法，可以进入下一题',
+  };
+}
+
+function askDraft(prompt: string): string {
+  const question = block(prompt, 'QUESTION') || '请结合你的项目讲一个具体例子。';
+  if (prompt.includes('FOLLOW_UP: yes')) {
+    const answer = block(prompt, 'ANSWER');
+    const preview = answer.length > 24 ? `${answer.slice(0, 24)}…` : answer || '刚才那句';
+    return `你提到「${preview}」。能再说具体一点吗？比如当时的取舍和结果。`;
+  }
+  return question;
+}
+
+/**
+ * 命中任务标记时返回模型该说的话。
+ * 抽取和评估返回 JSON；面试官提问返回口语文本。未命中则返回 undefined，假对话继续走回声。
+ */
 export function fakeStructuredReply(prompt: string): string | undefined {
   if (prompt.includes(TASK_PROFILE)) return JSON.stringify(profileDraft(prompt));
   if (prompt.includes(TASK_JOB)) return JSON.stringify(jobDraft(prompt));
   if (prompt.includes(TASK_RESUME)) return JSON.stringify(resumeDraft(prompt));
+  if (prompt.includes(TASK_EVALUATE)) return JSON.stringify(evaluateDraft(prompt));
+  if (prompt.includes(TASK_ASK)) return askDraft(prompt);
   return undefined;
 }

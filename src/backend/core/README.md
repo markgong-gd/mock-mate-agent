@@ -10,6 +10,9 @@
 | `health.service.ts` | 就绪检查 |
 | `usage.ts` | 组装用量回调：agent/llm 的 handler + db 的写库函数 |
 | `backup.service.ts` | pg_dump 备份 |
+| `interview.service.ts` | 文字面试：创建、加锁、先写回答、推进图、结束 |
+| `question-embed.service.ts` | 题库向量化，可重复跑 |
+| `seed-cli.ts` | `pnpm db:seed` |
 
 **放什么**：每个业务一个 `<领域>.service.ts`，函数签名 `fn(ctx: RequestCtx, input)`。
 **职责**：权限、事务、幂等、加锁、调图、入队、写库。

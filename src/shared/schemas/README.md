@@ -9,7 +9,8 @@ Zod schema 是档案、JD、简历、同意、题库种子的类型来源。API 
 | `job.ts` | JD 抽取结果与落库后的岗位 |
 | `resume.ts` | 简历内容。每条 bullet 的 `factRefs` 至少 1 个 |
 | `consent.ts` | 简历解析同意的目的与版本 |
-| `question.ts` | 题库 JSONL 的种子格式（P2a 才建表） |
+| `question.ts` | 题库种子、检索结果、进入面试图的题目 |
+| `interview.ts` | 面试设置、评估结果、进度和接口入参 |
 | `embedding.ts` | 向量维度 1024 |
 
 **不放什么**：数据库列定义（在 `backend/db/schema`）、业务流程（在 `backend/core`）。

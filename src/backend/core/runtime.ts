@@ -11,7 +11,9 @@ import { serverEnv } from '@/shared/env/server';
 import { setupCheckpointer } from '@/agent/graphs/checkpointer';
 import { registerJobs } from '@/backend/jobs';
 import { enqueueEmbedFacts } from '@/backend/jobs/embed-facts';
+import { enqueueEmbedQuestions } from '@/backend/jobs/embed-questions';
 import { setEmbedFactsSender } from '@/backend/core/embed.service';
+import { requestEmbedQuestions, setEmbedQuestionsSender } from '@/backend/core/question-embed.service';
 import { setBoss } from '@/backend/jobs/boss';
 import { assertRegistry } from '@/agent/llm/registry';
 import { logger } from '@/shared/common/logger';
@@ -44,7 +46,11 @@ export async function startRuntime() {
   setEmbedFactsSender(async (userId) => {
     await enqueueEmbedFacts(running, userId);
   });
+  setEmbedQuestionsSender(async () => {
+    await enqueueEmbedQuestions(running);
+  });
   await registerJobs(boss, { backup: { cron: env.backup.cron, enabled: Boolean(env.backup.dir) } });
+  await requestEmbedQuestions();
   logger.info({ backup: env.backup.dir ? env.backup.cron : 'disabled' }, 'jobs ready');
 }
 

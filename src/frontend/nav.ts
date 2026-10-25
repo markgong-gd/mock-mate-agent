@@ -30,7 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/profile', label: '职业档案', icon: UserRound },
   { to: '/jobs', label: '目标岗位', icon: Briefcase },
   { to: '/resumes', label: '定制简历', icon: FileText },
-  { to: '/interviews', label: '模拟面试', icon: Mic, phase: 'P2a' },
+  { to: '/interviews', label: '模拟面试', icon: Mic },
   { to: '/reports', label: '诊断报告', icon: BarChart3, phase: 'P2b' },
   { to: '/growth', label: '成长曲线', icon: TrendingUp, phase: 'P3' },
   { to: '/settings', label: '设置', icon: Settings, phase: 'P5' },

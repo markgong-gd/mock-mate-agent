@@ -65,12 +65,12 @@
 |---|---|---|---|---|
 | P0 | 工程骨架与技术验证 | 7 | 5 | 🚧 |
 | P1 | C1 简历定制 | 13 | 13 | ✅ |
-| P2a | 题库检索 + C2 文字面试 | 10 | 0 | ⬜ |
+| P2a | 题库检索 + C2 文字面试 | 10 | 10 | ✅ |
 | P2b | C3 诊断 | 6 | 0 | ⬜ |
 | P3 | 复训闭环 + 用量 + PII 脱敏 | 9 | 0 | ⬜ |
 | P4 | 语音面试 | 7 | 0 | ⬜ |
 | P5 | 评测与合规 | 8 | 0 | ⬜ |
-| **合计** | | **60** | **18** | |
+| **合计** | | **60** | **28** | |
 | 待补项 | 鉴权等（§9） | 7 | 0 | ⬜ |
 
 ---
@@ -131,16 +131,16 @@
 
 | 状态 | ID | 任务 | 验收标准 | 需求 | 学习点 |
 |---|---|---|---|---|---|
-| ⬜ | P2a-01 | Schema + 建表：`interview_sessions`（`mode`、`kind`、`settings`、`status`）/ `interview_turns`（`seq`、`idempotency_key` 唯一）/ `questions`（02 §7.1 全部字段与索引） | 迁移成功 | R-C2-6 | — |
-| ⬜ | P2a-02 | 初版题库：前端岗位优先，≥200 题（后续扩充到数百题以上），按 P1-13 规范打标签；幂等 seed | 数据入库，标签覆盖初版 JD 技能点 | R-C2-2 | — |
-| ⬜ | P2a-03 | `embed-questions` 任务：批量、可续跑、记录 `embed_model`；HNSW 索引 | 中断后再次运行只处理未完成的行 | R-C2-2 | 批量向量化 |
-| ⬜ | P2a-04 | `QuestionRetriever`：结构化过滤 + 向量召回 +（可选）`pg_trgm` 关键词召回与 RRF 合并 +（可选）重排；`evals/retrieval` 小样本集计算 recall@k | recall@k 达到设定阈值；是否启用关键词召回与重排的决策写入 02 §1.3 | R-C2-2 | 混合检索、RRF、Rerank |
-| ⬜ | P2a-05 | `domain.routeAfterEvaluate`、`domain.allocate`（短板优先、技能覆盖去重、难度梯度） | 追问上限、题目用尽、中止、短板优先等边界用例全部覆盖 | R-C2-3、R-C2-4 | — |
-| ⬜ | P2a-06 | `interview` 图：plan_questions / ask / wait_answer / evaluate / finalize + 条件边 + `PostgresSaver` | 用 MemorySaver + 假模型的图测试覆盖：追问、下一题、结束、中途失败后续跑 | R-C2-2、R-C2-3 | 有环的图、条件边、`interrupt` 节点无副作用 |
-| ⬜ | P2a-07 | 评估与追问 Prompt：`AnswerEvaluation { depth, needFollowUp, reason }`，最多 N 轮追问 | 浅回答触发追问；达到上限后进入下一题 | R-C2-3 | — |
-| ⬜ | P2a-08 | 面试接口：`POST /api/interviews`、`POST /:id/chat`（advisory lock + 幂等 + 按 `state.next` 选择 resume 或续跑）、`GET /:id`、`POST /:id/finish` | 重复提交不会产生重复轮次；同一场面试的并发请求返回 409 | R-C2-6、N-9 | `getState`、`updateState` |
-| ⬜ | P2a-09 | 面试设置页（岗位、题数、难度、风格）+ 对话页（`useChat` + `data-interview-state` 进度） | 设置生效；能完整走完一场面试 | R-C2-1、R-C2-2、N-11 | — |
-| ⬜ | P2a-10 | 中断恢复验收：刷新、断网、进程重启、模型调用中途失败 | 各场景均可继续，回答不丢失 | R-C2-6、N-9 | 持久化执行 |
+| ✅ | P2a-01 | Schema + 建表：`interview_sessions`（`mode`、`kind`、`settings`、`status`）/ `interview_turns`（`seq`、`idempotency_key` 唯一）/ `questions`（02 §7.1 全部字段与索引） | 迁移成功 | R-C2-6 | — (10-25) |
+| ✅ | P2a-02 | 初版题库：前端岗位优先，≥200 题（后续扩充到数百题以上），按 P1-13 规范打标签；幂等 seed | 数据入库，标签覆盖初版 JD 技能点 | R-C2-2 | — (10-25) |
+| ✅ | P2a-03 | `embed-questions` 任务：批量、可续跑、记录 `embed_model`；HNSW 索引 | 中断后再次运行只处理未完成的行 | R-C2-2 | 批量向量化 (10-25) |
+| ✅ | P2a-04 | `QuestionRetriever`：结构化过滤 + 向量召回 +（可选）`pg_trgm` 关键词召回与 RRF 合并 +（可选）重排；`evals/retrieval` 小样本集计算 recall@k | recall@k 达到设定阈值；是否启用关键词召回与重排的决策写入 02 §1.3 | R-C2-2 | 混合检索、RRF、Rerank (10-25) |
+| ✅ | P2a-05 | `domain.routeAfterEvaluate`、`domain.allocate`（短板优先、技能覆盖去重、难度梯度） | 追问上限、题目用尽、中止、短板优先等边界用例全部覆盖 | R-C2-3、R-C2-4 | — (10-25) |
+| ✅ | P2a-06 | `interview` 图：plan_questions / ask / wait_answer / evaluate / finalize + 条件边 + `PostgresSaver` | 用 MemorySaver + 假模型的图测试覆盖：追问、下一题、结束、中途失败后续跑 | R-C2-2、R-C2-3 | 有环的图、条件边、`interrupt` 节点无副作用 (10-25) |
+| ✅ | P2a-07 | 评估与追问 Prompt：`AnswerEvaluation { depth, needFollowUp, reason }`，最多 N 轮追问 | 浅回答触发追问；达到上限后进入下一题 | R-C2-3 | — (10-25) |
+| ✅ | P2a-08 | 面试接口：`POST /api/interviews`、`POST /:id/chat`（advisory lock + 幂等 + 按 `state.next` 选择 resume 或续跑）、`GET /:id`、`POST /:id/finish` | 重复提交不会产生重复轮次；同一场面试的并发请求返回 409 | R-C2-6、N-9 | `getState`、`updateState` (10-25) |
+| ✅ | P2a-09 | 面试设置页（岗位、题数、难度、风格）+ 对话页（`useChat` + `data-interview-state` 进度） | 设置生效；能完整走完一场面试 | R-C2-1、R-C2-2、N-11 | — (10-25) |
+| ✅ | P2a-10 | 中断恢复验收：刷新、断网、进程重启、模型调用中途失败 | 各场景均可继续，回答不丢失 | R-C2-6、N-9 | 持久化执行 (10-25) |
 
 ## P2b · C3 诊断（M2）
 
@@ -237,6 +237,7 @@
 | 2026-10-23 | 修订：P0 精简为 9 项；新增 P1-00 最小鉴权、P1-16 题库负责人、P2b-07 worker 部署、P2b-09 E2E；PII 脱敏由 P5 移到 P3（P3-10）；P2 拆成 P2a / P2b；§1 补团队规模（前端 1 + 后端 1）与工期表；需求编号对齐 01 修订版；合计 72 项 |
 | 2026-10-23 | **重写**：对齐 02 重写版（个人项目、单进程、LangGraph.js、模型注册表、pgvector 混合检索、魔搭部署）。投入改为 1 人、按人日估算；去掉归属列，新增学习点列；鉴权移入待补项（B-01）；合计 60 项 + 7 项待补 |
 | 2026-10-24 | P1（C1 简历定制）完成：同意 → 本地抽文本 → 抽取图 → 确认档案 → 向量化 → JD 匹配 → 简历图（检索 + guard）→ 流式预览 → 版本与打印。题库只写规范，不导入题目。P0-03 / P0-06 仍待真实 Key 与魔搭实测 |
+| 2026-10-25 | P2a（题库检索 + C2 文字面试）完成。检索决策：启用 pg_trgm 关键词召回与 RRF，不启用重排（02 §1.3）。创建面试只返回 id，第一题由 chat 拉起。诊断仍属 P2b |
 
 ### 本次重写的主要调整
 

@@ -1,0 +1,54 @@
+{
+  "k": 5,
+  "minMeanRecall": 0.8,
+  "cases": [
+    {
+      "id": "react-key",
+      "skills": ["react"],
+      "text": "渲染列表时 key 为什么要稳定，不能用数组下标凑合",
+      "expected": ["fe-react-001"]
+    },
+    {
+      "id": "typescript-unknown",
+      "skills": ["typescript"],
+      "text": "any 和 unknown 有什么差别，外来的 JSON 用哪一个",
+      "expected": ["fe-typescript-001"]
+    },
+    {
+      "id": "javascript-closure",
+      "skills": ["javascript"],
+      "text": "闭包是什么，为什么能记住外层函数里的变量",
+      "expected": ["fe-javascript-001"]
+    },
+    {
+      "id": "performance-lcp",
+      "skills": ["performance"],
+      "text": "LCP 大致代表用户看到的哪一件事",
+      "expected": ["fe-performance-002"]
+    },
+    {
+      "id": "browser-event-loop",
+      "skills": ["browser"],
+      "text": "事件循环里一次点击之后宏任务和微任务谁先跑完",
+      "expected": ["fe-browser-001"]
+    },
+    {
+      "id": "css-specificity",
+      "skills": ["css"],
+      "text": "CSS 选择器优先级是按什么比的，important 和内联样式",
+      "expected": ["fe-css-001"]
+    },
+    {
+      "id": "testing-unit",
+      "skills": ["testing"],
+      "text": "什么样的单元测试值得写，什么样的断言只是在重复实现",
+      "expected": ["fe-testing-001"]
+    },
+    {
+      "id": "network-cors",
+      "skills": ["network"],
+      "text": "浏览器跨域请求里 CORS 实际限制的是谁",
+      "expected": ["fe-network-001"]
+    }
+  ]
+}

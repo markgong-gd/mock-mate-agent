@@ -13,7 +13,8 @@ export const questionSeedSchema = z.object({
   content: z.string().trim().min(1).max(2000),
   /** 参考要点，给评估用，不直接展示为“标准答案” */
   answerPoints: z.array(z.string().trim().min(1)).min(1).max(8),
-  skillTags: z.array(skillTagSchema).min(1),
+  /** 1–3 个。超过 3 个时检索会什么都能召回 */
+  skillTags: z.array(skillTagSchema).min(1).max(3),
   /** 1 识记 … 5 设计与权衡，见 db/seeds/questions/README.md */
   difficulty: z.number().int().min(1).max(5),
   type: z.enum(QUESTION_TYPES),
@@ -24,3 +25,24 @@ export const questionSeedSchema = z.object({
 });
 
 export type QuestionSeed = z.infer<typeof questionSeedSchema>;
+export type QuestionType = (typeof QUESTION_TYPES)[number];
+
+/** 检索器返回的一条题目。score 是这一路召回的分数，RRF 之后会被换成融合分 */
+export const retrievedQuestionSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  answerPoints: z.array(z.string()),
+  skillTags: z.array(z.string()),
+  difficulty: z.number().int().min(1).max(5),
+  type: z.enum(QUESTION_TYPES),
+  score: z.number(),
+});
+
+export type RetrievedQuestion = z.infer<typeof retrievedQuestionSchema>;
+
+/** 写进面试图的题目。weaknessMatch 表示它命中了历史短板标签 */
+export const queuedQuestionSchema = retrievedQuestionSchema.omit({ score: true }).extend({
+  weaknessMatch: z.boolean(),
+});
+
+export type QueuedQuestion = z.infer<typeof queuedQuestionSchema>;

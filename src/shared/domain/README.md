@@ -7,10 +7,12 @@
 | `dev/echo-route.ts` | 回声图 reply 之后走 ask 还是 finish |
 | `matching/skill-gap.ts` | 档案技能标签和 JD 要求的命中率、缺口。精确标签，不用向量 |
 | `resume/fact-ref-guard.ts` | 引用不在允许集合里的 bullet 标成 unverified |
-| `retrieval/overlap.ts` | 向量召回为空时，用词面重叠挑事实，保证 Prompt 里有真实 id |
+| `retrieval/overlap.ts` | 向量召回为空时，用词面重叠挑事实或题目 |
+| `retrieval/rrf.ts` | 多路召回的倒数排名融合 |
+| `retrieval/recall.ts` | recall@k，给检索小样本用 |
+| `interview/route.ts` | 评估后 follow_up / next / finish |
+| `interview/allocate.ts` | 出题：短板优先、技能覆盖、难度梯度 |
 
 还没写（02 §3）：
-- `interview/route.ts`：评估后 follow_up / next / finish
-- `interview/allocate.ts`：出题分配（短板优先、技能覆盖、难度梯度）
 - `diagnosis/aggregate.ts`：维度分 / 总分聚合
 - `weakness/merge.ts`：短板合并

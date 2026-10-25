@@ -51,7 +51,7 @@ mock-mate-agent/
 │   │   ├── llm/             模型网关：注册表、provider、降级、结构化输出、用量
 │   │   ├── prompts/         Prompt 文本（带版本号）
 │   │   ├── tools/       ○   LLM 可调用的只读工具            (P2a 起)
-│   │   ├── retrieval/       事实检索器（题库检索 P2a 再加）
+│   │   ├── retrieval/       事实检索、题库检索（关键词 + RRF，不重排）
 │   │   ├── rubrics/     ○   评分标准定义                     (P2b 起)
 │   │   └── voice/       ○   语音 ASR/TTS 适配                (P4 起)
 │   │
@@ -125,12 +125,14 @@ shared/domain   -> shared/schemas                          零 IO、零三方 SD
 | `db/migrations/0000_extensions.sql` | 启用 `vector`、`pg_trgm` 扩展 |
 | `db/migrations/0001_init.sql` | 建 `users`、`llm_calls` 表 |
 | `db/migrations/0002_confused_meteorite.sql` | C1 业务表：profiles / experiences / facts（含 1024 维向量与 HNSW）/ skills / job_targets / job_requirements / resumes / consents。文件名由 drizzle-kit 生成，不要手改 |
-| `db/seeds/questions/README.md` | 题库字段、技能标签、难度、题型、版权和 JSONL 样例。还没有题目行，录入是 P2a-02 |
+| `db/seeds/questions/README.md` | 题库字段、技能标签、难度、题型、版权和 JSONL 样例 |
 | `db/migrations/meta/*` | drizzle-kit 快照与日志，自动维护，勿手改 |
-| `db/seeds/{questions,rubrics}/` | 题库 / 评分标准种子数据（P2a / P2b 填充） |
+| `db/seeds/questions/frontend.jsonl` | 初版前端题库（216 题）。`pnpm db:seed` 幂等导入并补向量 |
+| `db/seeds/rubrics/` | 评分标准种子数据（P2b 填充） |
 | `tests/helpers/env.ts` | 测试工具：注入测试环境变量（fake 模型）、读取整条流 |
 | `tests/integration/p0.test.ts` | 集成测试：迁移、readyz、用量入库、"中断 → 模拟进程重启 → 恢复" |
 | `tests/integration/p1.test.ts` | 集成测试：未同意 403、抽取不含手机号、保存后有向量、JD 缺口、简历导出、编造引用 409、检索不跨用户 |
+| `tests/integration/p2a.test.ts` | 集成测试：题库 recall@5、向量化可续跑、追问、幂等、并发 409、重启后续跑 |
 | `deploy/modelscope/entrypoint.sh` | 容器启动：初始化并启动内置 PG → 启动 Node → SIGTERM 时先停 Node 再停 PG |
 | `docs/01~04` | 需求 / 架构 / 计划 / 本文 |
 | `public/favicon.svg` | 静态资源 |
@@ -223,6 +225,9 @@ validate(入参) → 调 core 的函数(toCtx(c), input) → c.json(...) 或返�
 | `health.service.ts` | `checkReady`：检查 DB |
 | `usage.ts` | `createUsageHandler`：把 `agent/llm` 的用量回调接到 `backend/db` 的写库函数 |
 | `backup.service.ts` | `runBackup`：`pg_dump`，保留最近 N 份 |
+| `interview.service.ts` | 文字面试：创建、advisory lock、先写回答再推进图、结束 |
+| `question-embed.service.ts` | 题库向量化。只补 embedding 为空或模型不一致的行 |
+| `seed-cli.ts` | `pnpm db:seed`：导入 JSONL 再向量化 |
 
 **应该放什么**：每个业务一个 `xxx.service.ts`（未来有 `profile`、`job`、`resume`、`interview`、`diagnosis`、`training`、`privacy`）。所有函数的第一个参数都是 `ctx: RequestCtx`。这一层负责权限、事务、幂等、加锁、调图、入队、写库。
 
@@ -243,7 +248,7 @@ validate(入参) → 调 core 的函数(toCtx(c), input) → c.json(...) 或返�
 | `index.ts` | `registerJobs(boss)`：注册所有队列，由 `core/runtime.ts` 调用 |
 | `backup.ts` | `backup` 队列：handler 只调 `core/backup.service`，按 cron 定时 |
 
-未来会有 `diagnose.ts`（面试结束后异步诊断）、`embed-questions.ts`、`embed-facts.ts`。
+`embed-facts.ts` 在档案保存后向量化。`embed-questions.ts` 补题库向量，启动时也会入队一次。以后还有 `diagnose.ts`（P2b）。
 
 ---
 
@@ -443,7 +448,7 @@ frontend/routes/home.tsx                点击 Ping
 ### 4.3 回声图 vs 未来面试图
 
 ```text
-   echo 图（现在）                          interview 图（P2a）
+   echo 图                                  interview 图
    ────────────────                         ─────────────────────────
         START                                     START
           v                                         v
@@ -467,7 +472,7 @@ frontend/routes/home.tsx                点击 Ping
          |  finish  |                     ---------------+----+-----+
          +----+-----+                                    v
               v                                   +------------+
-             END                                  |  finalize  | -> 入队 diagnose
+             END                                  |  finalize  | P2a 只标结束；诊断入队是 P2b
                                                   +-----+------+
                                                         v
                                                        END

@@ -20,6 +20,8 @@ export interface CallMeta {
 export interface StructuredCallOptions {
   signal?: AbortSignal;
   callbacks?: Callbacks;
+  /** 传 `nostream` 时，这段模型输出不会进 UI 的文本流（评估 JSON 不能念给候选人） */
+  tags?: string[];
 }
 
 const messageText = (m: BaseMessage | undefined): string => {
@@ -111,6 +113,7 @@ export async function generateStructuredWith<T extends z.ZodType>(
   const config = {
     signal: opts.signal,
     callbacks: opts.callbacks,
+    tags: opts.tags,
     runName: meta.functionId,
     metadata: { functionId: meta.functionId, promptVersion: meta.promptVersion, sessionId: meta.sessionId },
   };

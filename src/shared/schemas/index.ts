@@ -4,6 +4,7 @@
  */
 export * from './consent';
 export * from './embedding';
+export * from './interview';
 export * from './job';
 export * from './profile';
 export * from './question';

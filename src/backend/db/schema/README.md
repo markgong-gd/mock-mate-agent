@@ -8,6 +8,8 @@
 | `job.ts` | job_targets / job_requirements |
 | `resume.ts` | resumes：同一岗位按 version 追加，正文是 jsonb |
 | `consent.ts` | consents：用途 + 文案版本，换版本要重新同意 |
+| `question.ts` | questions：全局题库。HNSW、技能 GIN、search_text 的 trgm GIN。没有 user_id |
+| `interview.ts` | interview_sessions / interview_turns。轮次按 seq 唯一，幂等键是部分唯一索引 |
 | `index.ts` | 汇总导出（drizzle-kit 从这里读取） |
 
 **新增表**：新建 `<领域>.ts` → 在 `index.ts` 中 `export *`。所有用户数据表都要有 `user_id` 且 `ON DELETE CASCADE`。

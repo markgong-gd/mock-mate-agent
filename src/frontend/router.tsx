@@ -26,6 +26,8 @@ export const router = createBrowserRouter([
       { path: 'resumes', lazy: page(() => import('./routes/resumes')) },
       { path: 'resumes/:resumeId', lazy: page(() => import('./routes/resume-editor')) },
       { path: 'resumes/:resumeId/print', lazy: page(() => import('./routes/resume-print')) },
+      { path: 'interviews', lazy: page(() => import('./routes/interviews')) },
+      { path: 'interviews/:interviewId', lazy: page(() => import('./routes/interviews')) },
       { path: 'dev/echo', lazy: page(() => import('./routes/dev-echo')) },
       ...NAV_ITEMS.filter((n) => n.phase).map((n) => ({
         path: n.to.slice(1),

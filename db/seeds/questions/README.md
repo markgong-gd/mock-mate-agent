@@ -1,6 +1,6 @@
 # 题库规范
 
-P2a 按本文件录入 `db/seeds/questions/*.jsonl`。初版面向前端岗位，至少 200 题。这里先把字段、标签、难度、版权和文件格式定下来，避免录入时每人一套。
+初版题在 `frontend.jsonl`（216 题，`node db/seeds/questions/build-bank.mjs` 可重新生成）。字段、标签、难度、版权和文件格式以本文件为准。导入：`pnpm db:seed`。
 
 校验代码在 `src/shared/schemas/question.ts` 的 `questionSeedSchema`。一条录完可以用它 parse；不通过就不要入库。
 
