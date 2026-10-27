@@ -18,8 +18,7 @@ export function SkillGapPanel({ match }: { match: SkillGapView }) {
           匹配度 <strong>{match.score}%</strong>
         </span>
         <span>
-          必备项{' '}
-          <strong>{match.mustScore === null ? '无' : `${match.mustScore}%`}</strong>
+          必备项 <strong>{match.mustScore === null ? '无' : `${match.mustScore}%`}</strong>
         </span>
       </div>
       <div className="flex flex-wrap gap-2">

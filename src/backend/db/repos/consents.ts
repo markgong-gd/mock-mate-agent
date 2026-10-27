@@ -8,10 +8,7 @@ import { getDb } from '../client';
 import { consents } from '../schema';
 
 export async function grantConsent(userId: string, purpose: string, version: string): Promise<void> {
-  await getDb()
-    .insert(consents)
-    .values({ id: newId(), userId, purpose, version })
-    .onConflictDoNothing();
+  await getDb().insert(consents).values({ id: newId(), userId, purpose, version }).onConflictDoNothing();
 }
 
 export async function hasConsent(userId: string, purpose: string, version: string): Promise<boolean> {

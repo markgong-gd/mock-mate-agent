@@ -11,7 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/frontend/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/frontend/components/ui/card';
 import { useJobs } from '@/frontend/features/jobs/queries';
-import { resumeKeys, useResumes } from '@/frontend/features/resumes/queries';
+import { resumeKeys, useAllResumes, useResumes } from '@/frontend/features/resumes/queries';
 import { ResumePreview } from '@/frontend/features/resumes/resume-preview';
 import { resumeContentSchema } from '@/shared/schemas/resume';
 
@@ -21,6 +21,7 @@ export default function ResumesPage() {
   const initialJob = params.get('jobId') ?? '';
   const [jobId, setJobId] = useState(initialJob);
   const versions = useResumes(jobId || undefined);
+  const all = useAllResumes();
   const queryClient = useQueryClient();
   const { object, submit, isLoading, error, stop } = useObject({
     api: '/api/resumes/generate',
@@ -38,7 +39,7 @@ export default function ResumesPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">定制简历</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          每条描述都要引用档案里的事实。标成未溯源的版本可以改，但不能导出。内容由 AI 生成。
+          每条描述都要引用档案里的事实。可以按岗位定制，也可以不选岗位，生成一份个人主简历。内容由 AI 生成。
         </p>
       </div>
       <Card>
@@ -59,10 +60,13 @@ export default function ResumesPage() {
               </option>
             ))}
           </select>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button disabled={!jobId || isLoading} onClick={() => submit({ jobId })}>
               {isLoading && <Loader2 className="animate-spin" />}
-              生成简历
+              按岗位生成
+            </Button>
+            <Button variant="outline" disabled={isLoading} onClick={() => submit({})}>
+              生成主简历
             </Button>
             {isLoading && (
               <Button variant="outline" onClick={stop}>
@@ -75,24 +79,50 @@ export default function ResumesPage() {
         </CardContent>
       </Card>
       <div className="space-y-2">
-        {versions.data?.resumes.map((resume) => {
-          const unverified = resume.content.sections.some((section) =>
-            section.bullets.some((bullet) => bullet.status === 'unverified'),
-          );
-          return (
-            <Link
-              key={resume.id}
-              to={`/resumes/${resume.id}`}
-              className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-            >
-              <span>
-                {resume.jobTitle} · 版本 {resume.version}
-              </span>
-              <span className="text-muted-foreground">{unverified ? '含未溯源' : '可导出'}</span>
-            </Link>
-          );
-        })}
+        <h2 className="text-sm font-medium">主简历</h2>
+        {(all.data?.resumes.filter((resume) => resume.kind === 'master') ?? []).map((resume) => (
+          <ResumeLink key={resume.id} resume={resume} />
+        ))}
+        {all.data && all.data.resumes.every((resume) => resume.kind !== 'master') && (
+          <p className="text-muted-foreground text-sm">还没有主简历。</p>
+        )}
+        {jobId && (
+          <>
+            <h2 className="pt-2 text-sm font-medium">当前岗位的版本</h2>
+            {versions.data?.resumes.map((resume) => (
+              <ResumeLink key={resume.id} resume={resume} />
+            ))}
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+function ResumeLink({
+  resume,
+}: {
+  resume: {
+    id: string;
+    jobTitle: string;
+    version: number;
+    quality: { issues: unknown[] };
+    content: { sections: { bullets: { status: string }[] }[] };
+  };
+}) {
+  const unverified = resume.content.sections.some((section) =>
+    section.bullets.some((bullet) => bullet.status === 'unverified'),
+  );
+  const label = unverified ? '含未溯源' : resume.quality.issues.length > 0 ? '有标准提示' : '可导出';
+  return (
+    <Link
+      to={`/resumes/${resume.id}`}
+      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+    >
+      <span>
+        {resume.jobTitle} · 版本 {resume.version}
+      </span>
+      <span className="text-muted-foreground">{label}</span>
+    </Link>
   );
 }

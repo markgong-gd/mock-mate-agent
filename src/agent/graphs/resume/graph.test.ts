@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JobView } from '@/shared/schemas/job';
 import type { ProfileBody } from '@/shared/schemas/profile';
-import type { ResumeContent } from '@/shared/schemas/resume';
+import type { ResumeContent, ResumeQuality } from '@/shared/schemas/resume';
 import { buildResumeGraph, type ResumeGraphDeps } from './graph';
 
 const FACT = '11111111-1111-4111-8111-111111111111';
@@ -25,7 +25,15 @@ const profile: ProfileBody = {
       facts: [{ id: FACT, text: '做过 React 性能优化' }],
     },
   ],
-  skills: [{ id: '44444444-4444-4444-8444-444444444444', name: 'React', tag: 'react' }],
+  skills: [
+    {
+      id: '44444444-4444-4444-8444-444444444444',
+      name: 'React',
+      tag: 'react',
+      level: 'proficient',
+      evidenceFactIds: [],
+    },
+  ],
 };
 
 const job: JobView = {
@@ -35,7 +43,15 @@ const job: JobView = {
   summary: '',
   rawText: 'React',
   createdAt: '2026-10-24T00:00:00.000Z',
-  requirements: [{ id: '66666666-6666-4666-8666-666666666666', label: 'React', tag: 'react', importance: 'must', description: '' }],
+  requirements: [
+    {
+      id: '66666666-6666-4666-8666-666666666666',
+      label: 'React',
+      tag: 'react',
+      importance: 'must',
+      description: '',
+    },
+  ],
 };
 
 function deps(draft: ResumeContent): { graphDeps: ResumeGraphDeps; saved: ResumeContent[] } {
@@ -46,7 +62,7 @@ function deps(draft: ResumeContent): { graphDeps: ResumeGraphDeps; saved: Resume
       { id: FACT, experienceId: profile.experiences[0]!.id, text: '做过 React 性能优化', score: 1 },
     ],
     generate: async () => draft,
-    save: async (_userId, _jobId, content) => {
+    save: async (_userId, _jobId, content, _quality) => {
       saved.push(content);
       return { id: '77777777-7777-4777-8777-777777777777' };
     },
@@ -75,5 +91,32 @@ describe('resume graph guard', () => {
     await buildResumeGraph(graphDeps).invoke({ jobId: job.id }, { configurable });
     expect(saved[0]?.sections[0]?.bullets[0]?.status).toBe('unverified');
     expect(saved[0]?.sections[0]?.bullets[0]?.factRefs).toEqual([MADE_UP]);
+  });
+
+  it('主简历没有岗位，标准检查会记下丢失的数字', async () => {
+    const numbered: ProfileBody = {
+      ...profile,
+      experiences: [
+        {
+          ...profile.experiences[0]!,
+          facts: [{ id: FACT, text: '把首屏从 4 秒降到 1 秒' }],
+        },
+      ],
+    };
+    const qualities: ResumeQuality[] = [];
+    const graphDeps: ResumeGraphDeps = {
+      load: async () => ({ profile: numbered, job: null }),
+      retrieve: async () => [
+        { id: FACT, experienceId: numbered.experiences[0]!.id, text: '把首屏从 4 秒降到 1 秒', score: 0 },
+      ],
+      generate: async () => bullet([FACT]),
+      save: async (_userId, jobId, _content, quality) => {
+        expect(jobId).toBeNull();
+        qualities.push(quality);
+        return { id: '77777777-7777-4777-8777-777777777777' };
+      },
+    };
+    await buildResumeGraph(graphDeps).invoke({ jobId: null }, { configurable });
+    expect(qualities[0]?.issues.some((issue) => issue.code === 'dropped_number')).toBe(true);
   });
 });

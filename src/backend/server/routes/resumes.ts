@@ -1,6 +1,6 @@
 /**
  * @file 【后端·路由】定制简历
- * POST /api/resumes/generate     流式生成。正文是一份越来越完整的 JSON，给 useObject 用
+ * POST /api/resumes/generate     流式生成。body.jobId 可省略，省略时生成主简历
  * GET  /api/resumes              列表，可用 ?jobId= 过滤
  * GET  /api/resumes/:id          某一版，含未溯源条目也能读，方便修改
  * PUT  /api/resumes/:id          编辑。asNewVersion 为真时另存
@@ -46,7 +46,9 @@ export const resumeRoutes = () =>
     .get('/:id/export', validate('param', idParam), async (c) =>
       c.json(await exportResume(toCtx(c), c.req.valid('param').id)),
     )
-    .get('/:id', validate('param', idParam), async (c) => c.json(await readResume(toCtx(c), c.req.valid('param').id)))
+    .get('/:id', validate('param', idParam), async (c) =>
+      c.json(await readResume(toCtx(c), c.req.valid('param').id)),
+    )
     .put('/:id', validate('param', idParam), validate('json', resumeUpdateSchema), async (c) =>
       c.json(await editResume(toCtx(c), c.req.valid('param').id, c.req.valid('json'))),
     );

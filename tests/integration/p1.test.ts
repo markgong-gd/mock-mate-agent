@@ -21,6 +21,7 @@ const OTHER_USER = '00000000-0000-4000-8000-0000000000bb';
 async function resetUserData(userId: string) {
   const pool = getPool();
   await pool.query('delete from consents where user_id = $1', [userId]);
+  await pool.query('delete from resumes where user_id = $1', [userId]);
   await pool.query('delete from job_targets where user_id = $1', [userId]);
   await pool.query('delete from profiles where user_id = $1', [userId]);
 }
@@ -141,6 +142,51 @@ describe('integration: C1 resume', () => {
     const badBody = (await bad.json()) as { resume: { id: string } };
     const denied = await app.request(`/api/resumes/${badBody.resume.id}/export`);
     expect(denied.status).toBe(409);
+
+    const master = await app.request('/api/resumes/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(master.status).toBe(200);
+    expect((await master.text()).trim().startsWith('{')).toBe(true);
+    const masterList = await app.request('/api/resumes');
+    const masterBody = (await masterList.json()) as {
+      resumes: { id: string; kind: string; jobId: string | null }[];
+    };
+    const masterResume = masterBody.resumes.find((item) => item.kind === 'master');
+    expect(masterResume?.jobId).toBeNull();
+
+    const profileRes = await app.request('/api/profile');
+    const profileBody = (await profileRes.json()) as {
+      profile: { experiences: { facts: { id: string }[] }[] };
+    };
+    const factId = profileBody.profile.experiences[0]?.facts[0]?.id;
+    expect(factId).toBeTruthy();
+    const flagged = await app.request(`/api/resumes/${masterResume!.id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        headline: '前端工程师',
+        summary: '摘要足够长',
+        sections: [
+          {
+            heading: '技能',
+            bullets: [{ text: '精通 Vue，独立完成页面', factRefs: [factId] }],
+          },
+        ],
+        asNewVersion: true,
+      }),
+    });
+    expect(flagged.status).toBe(200);
+    const flaggedBody = (await flagged.json()) as {
+      resume: { id: string; quality: { issues: { code: string; level: string }[] } };
+    };
+    expect(flaggedBody.resume.quality.issues.some((issue) => issue.code === 'skill_not_in_profile')).toBe(
+      true,
+    );
+    const stillExportable = await app.request(`/api/resumes/${flaggedBody.resume.id}/export`);
+    expect(stillExportable.status).toBe(200);
 
     const otherFactId = newId();
     const experienceId = newId();

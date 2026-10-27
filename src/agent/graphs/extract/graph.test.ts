@@ -24,6 +24,8 @@ describe('extract graphs', () => {
       text: '高级前端工程师\n要求熟悉 TypeScript 与 React',
       draft: null,
     });
-    expect(state.draft?.requirements.map((req) => req.tag)).toEqual(expect.arrayContaining(['react', 'typescript']));
+    expect(state.draft?.requirements.map((req) => req.tag)).toEqual(
+      expect.arrayContaining(['react', 'typescript']),
+    );
   });
 });

@@ -85,11 +85,7 @@ function deps(
   };
 }
 
-const historyRow = (
-  id: string,
-  tag: string,
-  status: ExistingWeakness['status'],
-): ExistingWeakness => ({
+const historyRow = (id: string, tag: string, status: ExistingWeakness['status']): ExistingWeakness => ({
   id,
   tag,
   title: `${tag} 以前就是短板`,

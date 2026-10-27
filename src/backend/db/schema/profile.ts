@@ -72,6 +72,9 @@ export const skills = pgTable(
       .references(() => profiles.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     tag: text('tag').notNull(),
+    /** used / proficient / expert。旧数据迁移时填 used */
+    level: text('level').notNull().default('used'),
+    evidenceFactIds: uuid('evidence_fact_ids').array().notNull().default([]),
   },
   (t) => [uniqueIndex('skills_user_tag_idx').on(t.userId, t.tag)],
 );

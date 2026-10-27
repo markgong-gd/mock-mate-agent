@@ -66,7 +66,9 @@ export default function ResumePrintPage() {
       <p className="mt-4 text-sm leading-6">{resume.content.summary}</p>
       {resume.content.sections.map((section, sectionIndex) => (
         <section key={`${section.heading}-${sectionIndex}`} className="mt-5">
-          <h2 className="border-b border-neutral-200 pb-1 text-sm font-semibold tracking-wide">{section.heading}</h2>
+          <h2 className="border-b border-neutral-200 pb-1 text-sm font-semibold tracking-wide">
+            {section.heading}
+          </h2>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
             {section.bullets.map((bullet, bulletIndex) => (
               <li key={`${sectionIndex}-${bulletIndex}`}>{bullet.text}</li>
@@ -74,7 +76,9 @@ export default function ResumePrintPage() {
           </ul>
         </section>
       ))}
-      <p className="mt-8 text-[11px] text-neutral-500">本简历由 MockMate 根据你确认过的事实生成，请核对后再投递。</p>
+      <p className="mt-8 text-[11px] text-neutral-500">
+        本简历由 MockMate 根据你确认过的事实生成，请核对后再投递。
+      </p>
     </article>
   );
 }

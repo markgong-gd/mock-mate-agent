@@ -115,9 +115,7 @@ export async function runDiagnosis(input: DiagnoseRequest, requestId = `diag-${i
     await graph.invoke(resume ? null : { reportId: input.reportId }, {
       ...cfg,
       // 用量挂到面试的 sessionId（不是 diag: 线程 id），这样"单场成本"包含诊断（N-12）
-      callbacks: [
-        createUsageHandler({ userId: input.userId, requestId, sessionId: report.sessionId }),
-      ],
+      callbacks: [createUsageHandler({ userId: input.userId, requestId, sessionId: report.sessionId })],
     });
     logger.info({ reportId: input.reportId, requestId }, 'diagnosis done');
   } catch (error) {

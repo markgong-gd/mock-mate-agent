@@ -14,7 +14,13 @@ import {
   type ResumeGraph,
 } from '@/agent/graphs/resume/graph';
 import { factRefGuard, hasUnverified } from '@/shared/domain/resume/fact-ref-guard';
-import type { ResumeContent, ResumeEditInput } from '@/shared/schemas/resume';
+import { resumeStandard } from '@/shared/domain/resume/standard';
+import {
+  RESUME_STANDARD_VERSION,
+  type ResumeContent,
+  type ResumeEditInput,
+  type ResumeView,
+} from '@/shared/schemas/resume';
 import { createUsageHandler } from './usage';
 
 let graph: ResumeGraph | undefined;
@@ -37,20 +43,28 @@ function refuseIfUnverified(content: ResumeContent, factIds: readonly string[]) 
   }
 }
 
+/** 库里的 quality 是写入时的快照。读的时候按当前档案重算，事实改过之后提示才对得上 */
+async function present(userId: string, resume: ResumeView): Promise<ResumeView> {
+  const profile = await getProfile(userId);
+  if (!profile) return resume;
+  return { ...resume, quality: resumeStandard(resume.content, profile) };
+}
+
 export async function listResumeViews(ctx: RequestCtx, jobId?: string) {
-  return { resumes: await listResumes(ctx.userId, jobId) };
+  const resumes = await listResumes(ctx.userId, jobId);
+  return { resumes: await Promise.all(resumes.map((resume) => present(ctx.userId, resume))) };
 }
 
 export async function readResume(ctx: RequestCtx, resumeId: string) {
   const resume = await getResume(ctx.userId, resumeId);
   if (!resume) throw new AppError('NOT_FOUND', '简历不存在');
-  return { resume };
+  return { resume: await present(ctx.userId, resume) };
 }
 
-export async function streamResume(ctx: RequestCtx, jobId: string, signal?: AbortSignal) {
+export async function streamResume(ctx: RequestCtx, jobId: string | undefined, signal?: AbortSignal) {
   const encoder = new TextEncoder();
   const iterable = await getGraph().stream(
-    { jobId },
+    { jobId: jobId ?? null },
     {
       configurable: { thread_id: `resume:${ctx.requestId}`, userId: ctx.userId, requestId: ctx.requestId },
       streamMode: 'custom',
@@ -81,12 +95,17 @@ export async function editResume(ctx: RequestCtx, resumeId: string, input: Resum
     { headline: input.headline, summary: input.summary, sections: input.sections },
     await allowedFactIds(ctx.userId),
   );
+  const profile = await getProfile(ctx.userId);
+  const quality = profile
+    ? resumeStandard(content, profile)
+    : { version: RESUME_STANDARD_VERSION, issues: [] };
   if (input.asNewVersion) {
-    return { resume: await insertResumeVersion(ctx.userId, current.jobId, content) };
+    const resume = await insertResumeVersion(ctx.userId, current.jobId, content, quality);
+    return { resume: await present(ctx.userId, resume) };
   }
-  const resume = await updateResumeContent(ctx.userId, resumeId, content);
+  const resume = await updateResumeContent(ctx.userId, resumeId, content, quality);
   if (!resume) throw new AppError('NOT_FOUND', '简历不存在');
-  return { resume };
+  return { resume: await present(ctx.userId, resume) };
 }
 
 export async function exportResume(ctx: RequestCtx, resumeId: string) {

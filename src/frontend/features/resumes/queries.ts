@@ -13,6 +13,13 @@ export const resumeKeys = {
   one: (id: string) => ['resumes', 'one', id] as const,
 };
 
+export function useAllResumes() {
+  return useQuery({
+    queryKey: resumeKeys.all,
+    queryFn: () => unwrap(api.resumes.$get({ query: {} })),
+  });
+}
+
 export function useResumes(jobId: string | undefined) {
   return useQuery({
     queryKey: resumeKeys.list(jobId ?? ''),
@@ -32,7 +39,8 @@ export function useResume(resumeId: string) {
 export function useSaveResume(resumeId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (body: ResumeEditInput) => unwrap(api.resumes[':id'].$put({ param: { id: resumeId }, json: body })),
+    mutationFn: (body: ResumeEditInput) =>
+      unwrap(api.resumes[':id'].$put({ param: { id: resumeId }, json: body })),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: resumeKeys.all });
     },

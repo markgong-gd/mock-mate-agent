@@ -29,7 +29,11 @@ function toView(
   };
 }
 
-export async function insertJob(userId: string, rawText: string, extracted: JobExtractOutput): Promise<JobView> {
+export async function insertJob(
+  userId: string,
+  rawText: string,
+  extracted: JobExtractOutput,
+): Promise<JobView> {
   const db = getDb();
   const jobId = newId();
   const requirements = extracted.requirements.map((req, index) => ({

@@ -310,7 +310,7 @@ mock-mate-agent/
 | 模型 | `GET /api/llm/ping?alias=chat`（连通检查） |
 | 档案 | `POST /api/profile/extract`（简历文本 → 草稿，不落库）、`GET / PUT /api/profile` |
 | JD | `POST /api/jobs`、`GET /api/jobs/:id`（含匹配与缺口） |
-| 简历 | `POST /api/resumes/generate`（流式）、`GET / PUT /api/resumes/:id`、`GET /api/resumes/:id/export` |
+| 简历 | `POST /api/resumes/generate`（流式；`jobId` 可省略，省略时生成主简历）、`GET / PUT /api/resumes/:id`、`GET /api/resumes/:id/export` |
 | 面试 | `POST /api/interviews`（流式，返回首题）、`GET /api/interviews/:id`、`POST /api/interviews/:id/chat`（流式）、`POST /api/interviews/:id/finish` |
 | 诊断 | `GET /api/reports`（可带 `?sessionId=`）、`GET /api/reports/:id`、`POST /api/reports/:id/retry` |
 | 训练 / 成长 | `POST /api/training`（专项训练，入参 `{ reportId, tag }`）、`GET /api/growth` |
@@ -466,13 +466,13 @@ Zod 校验 --失败--> 携带校验错误修复重试 1 次 --仍失败--> 走 r
 | 图 | 对应能力 | 是否用存档 | 主要学习点 | 对应需求 |
 |---|---|---|---|---|
 | `extract` | 简历文本 → 档案草稿；JD → 技能要求 | 否 | 结构化输出降级 | R-P1、R-C1-1 |
-| `resume` | 档案 + JD → 定制简历 | 否 | 检索增强、结构化流式、校验节点 | R-C1-3 ~ R-C1-5 |
+| `resume` | 档案 + JD → 定制简历；无 JD → 主简历 | 否 | 检索增强、结构化流式、校验节点、简历标准 | R-C1-3 ~ R-C1-5、R-C1-7、R-C1-8 |
 | `interview` | 多轮面试，含追问 | 是，`thread_id = sessionId` | 有环的图、`interrupt` / `Command`、存档恢复 | R-C2-1 ~ R-C2-6、R-C2-10 |
 | `diagnosis` | 逐题打分 → 诊断报告 → 短板 → 复训计划 | 是，`thread_id = diag:<reportId>` | `Send` 并行（map-reduce）、Reducer、可续跑 | R-C3-1 ~ R-C3-4、R-C3-6、R-P3 |
 
 ```text
                   +---------------------------------+
-                  |  职业档案 (profiles/facts/skills) |<---- 上传简历 / 用户确认
+                  |  职业档案 (profiles/facts/skills) |<---- 上传简历 / 表单采集 / 用户确认
                   |  + weaknesses + score_history   |
                   +---+--------------+-----------+--+
                       |              |           ^
@@ -513,25 +513,38 @@ client --HTTP--> server
 ```text
 [浏览器] 选择 PDF -> unpdf 提取文本（原文件不上传）
          -> 规则抽取联系方式（手机号 / 邮箱）留在前端草稿，不发给模型
+         或：空白表单填写技术栈（熟练度、证据事实）和经历事实
 POST /api/profile/extract   { text }                       （文本长度上限，如 50k 字符）
      -> llm/redact 脱敏 -> extract 图 -> ProfileDraft（不落库）
+     抽取结果的技能熟练度默认为 used，证据事实为空。模型不输出这两项。
 PUT  /api/profile           用户确认后写入 experiences / facts / skills
+     -> expert 且没有证据事实、或证据 id 不在本次事实里：400
      -> 入队 embed-facts
 POST /api/jobs              { jdText }
      -> extract 图 -> JobTarget + requirements -> domain.skillGap -> 返回匹配项 / 缺口
 POST /api/resumes/generate  （流式）
+     body: { jobId? }     有 jobId 为岗位定制，省略 jobId 为主简历
      -> resume 图:
-        load(profile + job)
-          -> retrieve_facts（FactRetriever：每条 JD 要求召回相关事实）
-          -> generate（chat 模型流式输出 ResumeDraft）
-          -> guard（domain.factRefGuard 全量校验；无效引用标 unverified）
-          -> save（resumes 新版本 version + 1）
+        load(profile + job?)     主简历不读岗位
+          -> retrieve_facts
+               岗位定制：FactRetriever，每条 JD 要求召回相关事实
+               主简历：该用户全部事实，按经历顺序，最多 24 条
+          -> generate（chat 模型流式输出 ResumeDraft，Prompt resume@2）
+          -> guard（domain.factRefGuard；无效引用标 unverified）
+          -> standard（domain.resumeStandard，不调模型，不改正文）
+          -> save（resumes 新版本 version + 1，写入 quality）
+GET  /api/resumes/:id
+     -> 按当前档案重算 quality 再返回（库里的 quality 是生成或编辑时的快照）
 GET  /api/resumes/:id/export
-     -> 含 unverified 条目返回 409；否则返回打印数据，前端打印页渲染后调用 window.print()
+     -> 含 unverified 条目返回 409；标准问题不参与这次判断
+     -> 否则返回打印数据，前端打印页渲染后调用 window.print()
 ```
 
 - `ResumeDraft` 每条 bullet 要求 `factRefs.min(1)`（Zod 层强制）。
 - 联系方式不经过模型，导出时由模板从档案填充。
+- 简历标准的规则见 01 · R-C1-8。`error` 与 `warning` 都只展示。
+- 主简历 `resumes.kind = master` 且 `job_target_id` 为空。岗位定制 `kind = tailored`。版本号按「同一岗位」或「该用户的主简历」分别递增。
+- 技能熟练度存在 `skills.level`（`used` / `proficient` / `expert`），证据存在 `skills.evidence_fact_ids`。标签目录仍是封闭的，匹配、题库、诊断继续只看 `tag`。
 
 ### 6.4 C2 面试图（核心）
 
@@ -752,9 +765,10 @@ db/seeds/questions/*.jsonl --pnpm db:seed--> questions（幂等 upsert，embeddi
 
 ```text
 users 1──1 profiles 1──* experiences 1──* facts (embedding)
-                    1──* skills
+                    1──* skills       (tag, level, evidence_fact_ids)
 users 1──* job_targets 1──* job_requirements
-job_targets 1──* resumes              (version, content jsonb 内含 factRefs, template)
+job_targets 1──* resumes              (kind=tailored, version, content jsonb, quality jsonb)
+users 1──* resumes                    (kind=master, job_target_id 为空，version 在该用户的主简历内递增)
 job_targets 1──* interview_sessions   (mode text|voice, kind normal|drill, settings, status)
 interview_sessions 1──* interview_turns   (seq, role, content, question_id, is_follow_up, idempotency_key)
 interview_sessions 1──1 diagnosis_reports (rubric_version, status, overall, scores jsonb, plan jsonb)
@@ -1105,7 +1119,7 @@ export interface ApiError {
 | 1 | **密钥安全**：模型 Key 只存在后端 | §2.3、§9.1、§9.4 |
 | 2 | **模型可替换**：业务只用别名；换 provider 只改环境变量 | §5 |
 | 3 | **Schema 先行**：LLM 结构化输出与 API 入参用 Zod 校验，禁止裸解析字符串 | §5.2、§8.1 |
-| 4 | **事实溯源**：简历每条描述带 `factRefs`，未关联事实的内容不得导出 | §6.3、`shared/domain/resume/fact-ref-guard.ts` |
+| 4 | **事实溯源**：简历每条描述带 `factRefs`，未关联事实的内容不得导出。简历标准只附加检查结果，不放宽这条 | §6.3、`shared/domain/resume/fact-ref-guard.ts`、`shared/domain/resume/standard.ts` |
 | 5 | **图的约定**：路由判断在 `domain`；`interrupt` 节点无副作用；工具只读；`userId` 从 config 注入 | §1.2 |
 | 6 | **不丢进度**：回答先落库、幂等、加锁、存档续跑 | §6.4、§9.3 |
 | 7 | **隐私合规**：PII 最小化、脱敏、一键删除（含存档、队列、日志、备份）；数据结构在 P2b 结束前定稿 | §8.3、§8.4、§9.4 |
@@ -1130,6 +1144,7 @@ export interface ApiError {
 | 2026-10-25 | P2a：题库表、面试会话与轮次、216 道前端题、`embed-questions`、QuestionRetriever（关键词 + RRF，不重排）。面试图 plan → ask → wait_answer → evaluate → 追问/下一题/结束。创建面试只返回 id，第一题由随后的 chat 拉起。finalize 只把场次标成 finished，诊断留到 P2b |
 | 2026-10-25 | P2b：Rubric 版本化（源头 `db/seeds/rubrics/*.json` → `rubrics` 表，报告记录所用版本）、`diagnosis_reports` / `weaknesses` / `skill_score_history` 建表定稿。诊断图用 `Send` 并行逐题打分 + 追加型 Reducer 汇总，`thread = diag:<reportId>`；短板证据由图回填校验（模型只给 `[T1]` 编号）。触发点由 finalize 节点调整为 `core.interview` 在场次变成 finished 后触发（`agent/graphs` 不允许依赖 `backend/core`），`agent/rubrics` 只负责把定义渲染成提示词文本。报告页雷达图手写 SVG，不引图表库 |
 | 2026-10-25 | P3：复训闭环 + 用量 + PII 脱敏。§1.3 新增结论 P3-06 **仅业务表、不启用 LangGraph Store**。短板写回档案用 `domain/weakness/merge`（按 tag 去重、严重度取较大值、状态只在"本场考到"时才流转），规则由诊断图算出后随 `saveDiagnosis` 写进同一事务（`backend/db` 不许依赖 `shared/domain`）。新增 `agent/tools/weaknesses.ts`（`userId` 只从 config 取，ESLint 只给 `agent/tools` 开了 `agent/graphs/config.ts` 一个口子）；专项训练用 `interview_sessions.kind = 'drill'` + `settings.drillTag`，不另开链路。PII 规则下沉到 `shared/common/pii.ts`，模型入口与 pino 日志共用（日志侧用 `hooks.logMethod` + `formatters.log` 兜底）。成本用 `agent/llm/pricing.ts` 现算不落库，单价缺失返回 `null`；诊断的调用也挂在面试 `session_id` 上。副作用：用量回调会在模型调用链里 `await` 一次写库，并行打分有分支快速失败时其余分支会被一起中止，续跑可能多打一两题（分数按唯一键 upsert，不会叠加），p2b 的相应断言已放宽并写明原因 |
+| 2026-10-27 | P6：主简历与简历标准。`skills` 增加 `level`、`evidence_fact_ids`；`resumes.job_target_id` 可空，增加 `kind`（`master` / `tailored`）和 `quality`。简历图在 guard 之后增加不调模型的 `standard` 节点。无 `jobId` 时按经历顺序带入最多 24 条事实。读取简历时按当前档案重算 `quality`，导出仍只看 `unverified`。教育经历与作品链接不做 |
 
 ### 本次重写的选型变更
 

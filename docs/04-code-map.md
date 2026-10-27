@@ -18,14 +18,18 @@
 粘贴文本 ──────────────┤
 规则抽出手机号/邮箱 ───┘──POST /profile/extract──> extract 图（先 redact 再结构化输出）
 确认页改草稿 ──PUT /profile──> 整份替换档案 ──入队──> embed-facts（pg-boss；没启动队列时当场算）
+空白表单（技术栈熟练度、证据事实、经历）──PUT /profile──> 同上。expert 无证据则 400
 粘贴 JD ──POST /jobs──> extract 图 ──> skillGap（标签集合，不是向量）
-选岗位 ──POST /resumes/generate──> resume 图：
-                                    load → FactRetriever（必须带 userId）
+选岗位或省略 jobId ──POST /resumes/generate──> resume 图：
+                                    load → 岗位定制走 FactRetriever（必须带 userId）
+                                         → 主简历取该用户最多 24 条事实
                                          → 生成 JSON（custom 流，useObject 边读边画）
                                          → factRefGuard（引用不在本次 Prompt 里就标 unverified）
-                                         → 新版本 insert
+                                         → resumeStandard（纯函数，写入 quality）
+                                         → 新版本 insert（kind = tailored | master）
 编辑 ──PUT /resumes/:id──> 再 guard（这次允许该用户的全部事实）──> 新版本
-打印 ──GET /resumes/:id/export──> 仍有 unverified 则 409
+读取 ──GET /resumes/:id──> 按当前档案重算 quality
+打印 ──GET /resumes/:id/export──> 仍有 unverified 则 409。标准问题不拦打印
 ```
 
 假模型只认 Prompt 里的 `TASK:` 和技能目录里的词，草稿需要在确认页改。这是故意的：默认 `.env` 没有 API Key 也能走完这条链路。

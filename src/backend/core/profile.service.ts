@@ -40,7 +40,12 @@ function materialize(draft: ProfileExtractOutput): ProfileDraft {
       id: newId(),
       facts: exp.facts.map((fact) => ({ ...fact, id: newId() })),
     })),
-    skills: draft.skills.map((skill) => ({ ...skill, id: newId() })),
+    skills: draft.skills.map((skill) => ({
+      ...skill,
+      id: newId(),
+      level: 'used' as const,
+      evidenceFactIds: [],
+    })),
   };
 }
 
@@ -81,7 +86,12 @@ export async function extractProfile(ctx: RequestCtx, text: string) {
   );
   if (!result.draft) throw new AppError('LLM_SCHEMA_INVALID');
   logger.info(
-    { requestId: ctx.requestId, userIdHash: hashUserId(ctx.userId), chars: text.length, redacted: redacted.counts },
+    {
+      requestId: ctx.requestId,
+      userIdHash: hashUserId(ctx.userId),
+      chars: text.length,
+      redacted: redacted.counts,
+    },
     'profile extracted',
   );
   return { draft: materialize(result.draft), redacted: redacted.counts };

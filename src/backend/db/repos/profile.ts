@@ -24,7 +24,11 @@ export async function getProfile(userId: string): Promise<ProfileBody | null> {
     .from(experiences)
     .where(eq(experiences.userId, userId))
     .orderBy(asc(experiences.sortOrder));
-  const factRows = await db.select().from(facts).where(eq(facts.userId, userId)).orderBy(asc(facts.sortOrder));
+  const factRows = await db
+    .select()
+    .from(facts)
+    .where(eq(facts.userId, userId))
+    .orderBy(asc(facts.sortOrder));
   const skillRows = await db.select().from(skills).where(eq(skills.userId, userId));
   return {
     contact: { name: profile.name, phone: profile.phone ?? '', email: profile.email ?? '' },
@@ -45,6 +49,8 @@ export async function getProfile(userId: string): Promise<ProfileBody | null> {
       id: skill.id,
       name: skill.name,
       tag: skill.tag as ProfileBody['skills'][number]['tag'],
+      level: skill.level === 'proficient' || skill.level === 'expert' ? skill.level : ('used' as const),
+      evidenceFactIds: skill.evidenceFactIds,
     })),
   };
 }
@@ -64,7 +70,10 @@ export async function saveProfile(userId: string, body: ProfileBody): Promise<Pr
       updatedAt: new Date(),
     };
     if (existing) {
-      await tx.update(profiles).set(row).where(and(eq(profiles.id, profileId), eq(profiles.userId, userId)));
+      await tx
+        .update(profiles)
+        .set(row)
+        .where(and(eq(profiles.id, profileId), eq(profiles.userId, userId)));
       await tx.delete(experiences).where(eq(experiences.userId, userId));
       await tx.delete(skills).where(eq(skills.userId, userId));
     } else {
@@ -100,7 +109,17 @@ export async function saveProfile(userId: string, body: ProfileBody): Promise<Pr
       const skillValues = body.skills.flatMap((skill) => {
         if (seen.has(skill.tag)) return [];
         seen.add(skill.tag);
-        return [{ id: skill.id, userId, profileId, name: skill.name, tag: skill.tag }];
+        return [
+          {
+            id: skill.id,
+            userId,
+            profileId,
+            name: skill.name,
+            tag: skill.tag,
+            level: skill.level,
+            evidenceFactIds: skill.evidenceFactIds,
+          },
+        ];
       });
       if (skillValues.length > 0) await tx.insert(skills).values(skillValues);
     }
@@ -114,6 +133,17 @@ export interface FactSnippet {
   id: string;
   experienceId: string;
   text: string;
+}
+
+/** 按经历顺序再按事实顺序。主简历要把事实整段带进 Prompt，不能按 sortOrder 把各段的第一条揉在一起 */
+export async function listFactsInExperienceOrder(userId: string): Promise<FactSnippet[]> {
+  const rows = await getDb()
+    .select({ id: facts.id, experienceId: facts.experienceId, text: facts.text })
+    .from(facts)
+    .innerJoin(experiences, eq(experiences.id, facts.experienceId))
+    .where(eq(facts.userId, userId))
+    .orderBy(asc(experiences.sortOrder), asc(facts.sortOrder));
+  return rows;
 }
 
 export async function listFactSnippets(userId: string): Promise<FactSnippet[]> {

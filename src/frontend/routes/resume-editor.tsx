@@ -43,6 +43,26 @@ export default function ResumeEditorPage() {
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">AI 生成的草稿。改完保存会成为新版本。</p>
       </div>
+      {resume.data.resume.quality.issues.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">简历标准</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            <p className="text-muted-foreground text-xs">这些是写法检查。导出只拒绝未溯源的描述。</p>
+            <ul className="space-y-1 text-sm">
+              {resume.data.resume.quality.issues.map((issue, index) => (
+                <li
+                  key={`${issue.code}-${index}`}
+                  className={issue.level === 'error' ? 'text-destructive' : ''}
+                >
+                  {issue.message}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">内容</CardTitle>

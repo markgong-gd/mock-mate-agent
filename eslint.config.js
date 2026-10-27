@@ -121,7 +121,15 @@ const restrictImports = (patterns, paths = []) => ({
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'db/migrations/**', 'db/seeds/**/*.mjs', 'coverage/**', '.codebuddy/**', 'docs/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'db/migrations/**',
+      'db/seeds/**/*.mjs',
+      'coverage/**',
+      '.codebuddy/**',
+      'docs/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

@@ -8,11 +8,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { END, START, StateGraph, Annotation, type LangGraphRunnableConfig } from '@langchain/langgraph';
 import { redactText } from '@/agent/llm/redact';
 import { generateStructured } from '@/agent/llm/structured';
-import {
-  JOB_EXTRACT_PROMPT_VERSION,
-  JOB_EXTRACT_SYSTEM,
-  jobExtractHuman,
-} from '@/agent/prompts/extract-job';
+import { JOB_EXTRACT_PROMPT_VERSION, JOB_EXTRACT_SYSTEM, jobExtractHuman } from '@/agent/prompts/extract-job';
 import {
   PROFILE_EXTRACT_PROMPT_VERSION,
   PROFILE_EXTRACT_SYSTEM,
@@ -35,7 +31,10 @@ const JobState = Annotation.Root({
 
 type ExtractFn<T> = (text: string, config?: LangGraphRunnableConfig) => Promise<T>;
 
-async function defaultProfileExtract(text: string, config?: LangGraphRunnableConfig): Promise<ProfileExtractOutput> {
+async function defaultProfileExtract(
+  text: string,
+  config?: LangGraphRunnableConfig,
+): Promise<ProfileExtractOutput> {
   // 脱敏放在图里，而不是只靠路由记得做。直接 invoke 这张图也发不出手机号。
   const redacted = redactText(text).text;
   return generateStructured(

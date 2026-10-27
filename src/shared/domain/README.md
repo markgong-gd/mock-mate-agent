@@ -7,6 +7,7 @@
 | `dev/echo-route.ts` | 回声图 reply 之后走 ask 还是 finish |
 | `matching/skill-gap.ts` | 档案技能标签和 JD 要求的命中率、缺口。精确标签，不用向量 |
 | `resume/fact-ref-guard.ts` | 引用不在允许集合里的 bullet 标成 unverified |
+| `resume/standard.ts` | 简历标准 `resume-standard@1`：技能是否越界、数字是否丢失等。只出检查结果，不改正文 |
 | `retrieval/overlap.ts` | 向量召回为空时，用词面重叠挑事实或题目 |
 | `retrieval/rrf.ts` | 多路召回的倒数排名融合 |
 | `retrieval/recall.ts` | recall@k，给检索小样本用 |
