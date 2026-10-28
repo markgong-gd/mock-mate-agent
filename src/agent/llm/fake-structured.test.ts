@@ -7,6 +7,7 @@ import { answerScoreSchema, trainingPlanSchema } from '@/shared/schemas/diagnosi
 import { jobExtractOutputSchema } from '@/shared/schemas/job';
 import { profileExtractOutputSchema } from '@/shared/schemas/profile';
 import { resumeContentSchema } from '@/shared/schemas/resume';
+import { studioCoachProposalSchema } from '@/shared/schemas/studio';
 import { weaknessExtractOutputSchema } from '@/shared/schemas/weakness';
 import { fakeStructuredReply } from './fake-structured';
 
@@ -102,6 +103,60 @@ describe('fakeStructuredReply', () => {
       JSON.parse(fakeStructuredReply('TASK: diagnosis.plan\nWEAKNESSES:\n- （无）\nEND_WEAKNESSES')!),
     );
     expect(empty.items).toEqual([]);
+  });
+
+  it('策划师开场是追问，开口那句原样返回', () => {
+    const proposal = studioCoachProposalSchema.parse(
+      JSON.parse(
+        fakeStructuredReply(
+          [
+            'TASK: studio.coach',
+            'PHASE: need_role',
+            'TARGET_ROLE: ',
+            'USER:',
+            '',
+            'END_USER',
+            'MATERIALS:',
+            '',
+            'END_MATERIALS',
+            'DOCUMENT:',
+            '{}',
+            'END_DOCUMENT',
+          ].join('\n'),
+        )!,
+      ),
+    );
+    expect(proposal.action).toBe('ask');
+    expect(proposal.say).toContain('岗位');
+    expect(fakeStructuredReply('TASK: studio.speak\nSAY:\n先问岗位。\nEND_SAY')).toBe('先问岗位。');
+  });
+
+  it('经历对不上时说明怎样的一句才符合', () => {
+    const proposal = studioCoachProposalSchema.parse(
+      JSON.parse(
+        fakeStructuredReply(
+          [
+            'TASK: studio.coach',
+            'PHASE: need_materials',
+            'TARGET_ROLE: 中高级前端',
+            'USER:',
+            '公司：mock1',
+            '职位：前端开发工程师',
+            'END_USER',
+            'MATERIALS:',
+            '公司：mock1',
+            'END_MATERIALS',
+            'DOCUMENT:',
+            '{}',
+            'END_DOCUMENT',
+          ].join('\n'),
+        )!,
+      ),
+    );
+    expect(proposal.action).toBe('ask');
+    expect(proposal.say).toContain('例如');
+    expect(proposal.say).toContain('公司');
+    expect(proposal.document.experiences).toEqual([]);
   });
 
   it('普通对话不拦截', () => {

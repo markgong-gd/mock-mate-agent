@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { loadDotEnv } from './load';
 
-export const PROVIDER_KINDS = ['openai-compatible', 'deepseek', 'ollama', 'fake'] as const;
+export const PROVIDER_KINDS = ['openai-compatible', 'deepseek', 'ollama', 'fake', 'dg-custom'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
 export const CHAT_ALIASES = ['chat', 'judge', 'extract', 'fallback'] as const;
@@ -129,13 +129,23 @@ const providerSchema = z
     kind: z.enum(PROVIDER_KINDS),
     baseUrl: z.preprocess(emptyToUndefined, z.url().optional()),
     apiKey: optionalString,
+    /** dg-custom 网关头：X-Enterprise-Id / X-Tenant-Id */
+    enterpriseId: optionalString,
+    /** dg-custom 网关头：X-User-Id */
+    userId: optionalString,
+    /** dg-custom 网关头：X-Domain */
+    domain: optionalString,
+    /** dg-custom 网关头：X-IDE-Type */
+    ideType: optionalString,
+    /** dg-custom 网关头：X-IDE-Name */
+    ideName: optionalString,
+    /** dg-custom 网关头：X-IDE-Version */
+    ideVersion: optionalString,
   })
   .superRefine((p, ctx) => {
-    if (p.kind === 'openai-compatible') {
-      if (!p.baseUrl)
-        ctx.addIssue({ code: 'custom', path: ['baseUrl'], message: 'openai-compatible 需要 BASE_URL' });
-      if (!p.apiKey)
-        ctx.addIssue({ code: 'custom', path: ['apiKey'], message: 'openai-compatible 需要 API_KEY' });
+    if (p.kind === 'openai-compatible' || p.kind === 'dg-custom') {
+      if (!p.baseUrl) ctx.addIssue({ code: 'custom', path: ['baseUrl'], message: `${p.kind} 需要 BASE_URL` });
+      if (!p.apiKey) ctx.addIssue({ code: 'custom', path: ['apiKey'], message: `${p.kind} 需要 API_KEY` });
     }
     if (p.kind === 'deepseek' && !p.apiKey) {
       ctx.addIssue({ code: 'custom', path: ['apiKey'], message: 'deepseek 需要 API_KEY' });
@@ -171,10 +181,27 @@ export function parseServerEnv(source: Record<string, string | undefined>) {
       kind: source[`${prefix}KIND`],
       baseUrl: source[`${prefix}BASE_URL`],
       apiKey: source[`${prefix}API_KEY`],
+      enterpriseId: source[`${prefix}ENTERPRISE_ID`],
+      userId: source[`${prefix}USER_ID`],
+      domain: source[`${prefix}DOMAIN`],
+      ideType: source[`${prefix}IDE_TYPE`],
+      ideName: source[`${prefix}IDE_NAME`],
+      ideVersion: source[`${prefix}IDE_VERSION`],
     });
     if (!parsed.success) {
       for (const i of parsed.error.issues) {
-        const field = { kind: 'KIND', baseUrl: 'BASE_URL', apiKey: 'API_KEY' }[String(i.path[0])] ?? '';
+        const field =
+          {
+            kind: 'KIND',
+            baseUrl: 'BASE_URL',
+            apiKey: 'API_KEY',
+            enterpriseId: 'ENTERPRISE_ID',
+            userId: 'USER_ID',
+            domain: 'DOMAIN',
+            ideType: 'IDE_TYPE',
+            ideName: 'IDE_NAME',
+            ideVersion: 'IDE_VERSION',
+          }[String(i.path[0])] ?? '';
         issues.push(`${prefix}${field}: ${i.message}`);
       }
       continue;

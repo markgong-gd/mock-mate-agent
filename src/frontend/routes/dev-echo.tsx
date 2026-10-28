@@ -107,7 +107,7 @@ function EchoChat(props: {
   const [metrics, setMetrics] = useState<Metrics[]>([]);
   const [input, setInput] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
-  const transport = useMemo(
+  const { transport, sendEmpty } = useMemo(
     () => createAnswerTransport(`/api/dev/echo/${props.threadId}/chat`),
     [props.threadId],
   );
@@ -131,6 +131,11 @@ function EchoChat(props: {
   const notStarted = !props.started && messages.length === 0;
   const streamErr = parseStreamError(error);
 
+  const kickOff = () => {
+    sendEmpty();
+    clearError();
+    void sendMessage();
+  };
   const submit = () => {
     const text = input.trim();
     if (!text || busy || finished) return;
@@ -152,7 +157,7 @@ function EchoChat(props: {
           {notStarted && (
             <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 py-16 text-sm">
               <p>新会话，点击开始后由面试官提出第一个问题。</p>
-              <Button onClick={() => void sendMessage()} disabled={busy}>
+              <Button onClick={kickOff} disabled={busy}>
                 <Play />
                 开始
               </Button>
@@ -176,16 +181,21 @@ function EchoChat(props: {
               <span className="text-destructive">
                 {streamErr.message}（{streamErr.code}）
               </span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  clearError();
-                  void sendMessage();
-                }}
-              >
-                重试
-              </Button>
+              {progress.phase === 'waiting' && messages.at(-1)?.role !== 'user' ? (
+                <span className="text-muted-foreground">请在下方输入回答后发送</span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    clearError();
+                    if (messages.at(-1)?.role === 'user') void sendMessage();
+                    else kickOff();
+                  }}
+                >
+                  重试
+                </Button>
+              )}
             </div>
           )}
           <div ref={bottomRef} />

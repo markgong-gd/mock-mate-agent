@@ -34,6 +34,20 @@
 
 假模型只认 Prompt 里的 `TASK:` 和技能目录里的词，草稿需要在确认页改。这是故意的：默认 `.env` 没有 API Key 也能走完这条链路。
 
+### 0.2 简历策划怎么走
+
+和上面的定制简历分开，不读档案、不写 `resumes`。说明见 [05 · 简历策划](05-resume-studio.md)。
+
+```text
+/studio 新建一场
+/studio/:id  左对话 + 右预览
+  空 message ──POST /api/studio/:id/chat──> studio 图
+       coach（JSON，nostream）→ 防编造 → 落库 → data-studio-resume
+       speak（原样说出 say）→ wait_user(interrupt)
+  用户回复带 idempotencyKey，先写入 studio_turns 再 resume
+满意后说「可以了」→ status = ready → /studio/:id/print → window.print() 另存 PDF
+```
+
 ---
 
 ## 1. 顶层目录：前端 / 后端 / 智能体
@@ -309,7 +323,7 @@ agent/graphs/<图名>/
 
 | 文件 | 做什么 |
 |---|---|
-| `providers.ts` | 按 `kind`（openai-compatible / deepseek / ollama / fake）创建 LangChain 模型 |
+| `providers.ts` | 按 `kind`（openai-compatible / deepseek / ollama / fake / dg-custom）创建 LangChain 模型 |
 | `registry.ts` | 解析 `MODEL_CHAT=deepseek:deepseek-chat`；`getChatModel(alias)` 带缓存；`assertRegistry()` 启动校验 |
 | `caps.ts` | 模型能力表 → 选择结构化输出方式 |
 | `fake.ts` | 离线假模型，逐字输出 |

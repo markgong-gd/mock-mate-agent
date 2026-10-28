@@ -1,10 +1,12 @@
 /**
  * @file 【智能体·llm】离线结构化草稿
  * 做什么：假模型看到 TASK 标记时，用规则拼出能通过 Zod 的 JSON，而不是回声句子。
- * 为什么：默认 .env 没有真实模型，P1 的抽取和简历生成仍要能在本地点通。
+ * 为什么：默认 .env 没有真实模型，抽取、简历生成和策划对话仍要能在本地点通。
  * 局限：不会真正理解简历，只认技能目录里的词，并把句子切成“事实”。确认页就是用来改这些草稿的。
  */
+import { STUDIO_LINES } from '@/shared/domain/studio/phase';
 import { findSkillTags, skillLabel, type SkillTag } from '@/shared/schemas/skill-tags';
+import { emptyStudioDocument, studioDocumentSchema, type StudioDocument } from '@/shared/schemas/studio';
 
 const TASK_PROFILE = 'TASK: profile.extract';
 const TASK_JOB = 'TASK: job.extract';
@@ -14,6 +16,8 @@ const TASK_EVALUATE = 'TASK: interview.evaluate';
 const TASK_DIAG_SCORE = 'TASK: diagnosis.score';
 const TASK_DIAG_WEAKNESS = 'TASK: diagnosis.weakness';
 const TASK_DIAG_PLAN = 'TASK: diagnosis.plan';
+const TASK_STUDIO_COACH = 'TASK: studio.coach';
+const TASK_STUDIO_SPEAK = 'TASK: studio.speak';
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
@@ -232,6 +236,109 @@ function planDraft(prompt: string) {
   };
 }
 
+function parseStudioDocument(raw: string): StudioDocument {
+  try {
+    return studioDocumentSchema.parse(raw ? (JSON.parse(raw) as unknown) : {});
+  } catch {
+    return emptyStudioDocument();
+  }
+}
+
+function experienceFrom(user: string, current: StudioDocument, role: string): StudioDocument | null {
+  const text = user.trim();
+  if (text.length < 8) return null;
+  const org = /在([\u4e00-\u9fa5A-Za-z0-9]{2,20}?)(?:做|担任|工作)/.exec(text)?.[1];
+  if (org && text.includes(org)) {
+    const titleMatch = /(?:做|担任)([\u4e00-\u9fa5A-Za-z0-9]{2,16})/.exec(text)?.[1] ?? '';
+    const title = titleMatch && text.includes(titleMatch) ? titleMatch : '';
+    const bullet = text.slice(0, 400);
+    const experiences = current.experiences.map((item) => ({ ...item, bullets: [...item.bullets] }));
+    const last = experiences.at(-1);
+    if (last && last.org === org) {
+      if (!last.bullets.includes(bullet)) last.bullets = [...last.bullets, bullet].slice(0, 8);
+    } else {
+      experiences.push({ org, title, start: '', end: '', bullets: [bullet] });
+    }
+    return {
+      ...current,
+      basics: { ...current.basics, headline: current.basics.headline || role.slice(0, 80) },
+      experiences,
+    };
+  }
+  if (/\d/.test(text) && current.experiences.length > 0) {
+    const experiences = current.experiences.map((item) => ({ ...item, bullets: [...item.bullets] }));
+    const last = experiences.at(-1);
+    if (!last) return null;
+    const bullet = text.slice(0, 400);
+    if (!last.bullets.includes(bullet)) last.bullets = [...last.bullets, bullet].slice(0, 8);
+    return { ...current, experiences };
+  }
+  return null;
+}
+
+/** 按 PHASE 走：先问岗位，再收经历，对得上原话才改稿 */
+function studioCoachDraft(prompt: string): string {
+  const phase = /PHASE: (\S+)/.exec(prompt)?.[1] ?? 'need_role';
+  const user = block(prompt, 'USER');
+  const materials = block(prompt, 'MATERIALS');
+  const role = (/TARGET_ROLE: (.*)/.exec(prompt)?.[1] ?? '').trim();
+  const current = parseStudioDocument(block(prompt, 'DOCUMENT'));
+  const corpus = `${materials}\n${user}`;
+  const pack = (value: unknown) => JSON.stringify(value);
+
+  if (phase === 'confirm') {
+    return pack({
+      say: '这版可以导出了。看一下右侧预览，没问题就点导出 PDF。还想改的话直接说。',
+      action: 'ready',
+      targetRole: role,
+      focus: 'summary',
+      document: current,
+    });
+  }
+
+  if (phase === 'need_role') {
+    const first = user
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean);
+    const targetRole = first && corpus.includes(first.slice(0, 40)) ? first.slice(0, 40) : '';
+    return pack({
+      say: targetRole
+        ? `目标先记成「${targetRole}」。接下来发我一段经历：公司、职位，以及一件你做成的事。`
+        : STUDIO_LINES.askRole,
+      action: 'ask',
+      targetRole,
+      focus: 'basics',
+      document: current,
+    });
+  }
+
+  const built = experienceFrom(user, current, role);
+  if (!built) {
+    const tried = user.trim().length > 0;
+    const say =
+      phase === 'clarify'
+        ? STUDIO_LINES.askClarify
+        : phase === 'need_materials' && tried
+          ? STUDIO_LINES.askMaterialsRetry
+          : STUDIO_LINES.askMaterials;
+    return pack({
+      say,
+      action: 'ask',
+      targetRole: role,
+      focus: 'experience',
+      document: current,
+    });
+  }
+  return pack({
+    say: '我按你刚才说的改了一节，右侧已经能看到。数字都留着你的原话。',
+    action: 'revise',
+    targetRole: role,
+    focus: 'experience',
+    document: built,
+  });
+}
+
 function askDraft(prompt: string): string {
   const question = block(prompt, 'QUESTION') || '请结合你的项目讲一个具体例子。';
   if (prompt.includes('FOLLOW_UP: yes')) {
@@ -254,6 +361,8 @@ export function fakeStructuredReply(prompt: string): string | undefined {
   if (prompt.includes(TASK_DIAG_SCORE)) return JSON.stringify(scoreDraft(prompt));
   if (prompt.includes(TASK_DIAG_WEAKNESS)) return JSON.stringify(weaknessDraft(prompt));
   if (prompt.includes(TASK_DIAG_PLAN)) return JSON.stringify(planDraft(prompt));
+  if (prompt.includes(TASK_STUDIO_SPEAK)) return block(prompt, 'SAY') || '我们继续。';
+  if (prompt.includes(TASK_STUDIO_COACH)) return studioCoachDraft(prompt);
   if (prompt.includes(TASK_ASK)) return askDraft(prompt);
   return undefined;
 }

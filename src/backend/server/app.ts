@@ -22,6 +22,7 @@ import { metaRoutes } from './routes/meta';
 import { profileRoutes } from './routes/profile';
 import { reportRoutes } from './routes/reports';
 import { resumeRoutes } from './routes/resumes';
+import { studioRoutes } from './routes/studio';
 import { trainingRoutes } from './routes/training';
 import { usageRoutes } from './routes/usage';
 import type { AppEnv } from './types';
@@ -48,6 +49,7 @@ const apiRoutes = (cfg: AppConfig) =>
     .route('/profile', profileRoutes())
     .route('/jobs', jobRoutes())
     .route('/resumes', resumeRoutes())
+    .route('/studio', studioRoutes())
     .route('/interviews', interviewRoutes())
     .route('/training', trainingRoutes())
     .route('/reports', reportRoutes())

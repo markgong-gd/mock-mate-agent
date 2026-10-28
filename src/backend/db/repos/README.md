@@ -10,6 +10,7 @@
 | `consents.ts` | 记录同意、判断当前文案版本是否已同意 |
 | `questions.ts` | 按 id 批量读题、题库 upsert 与向量回写 |
 | `interviews.ts` | 会话（含 `kind = drill`）与轮次；seq 在事务里取 max+1 |
+| `studio.ts` | 策划会话与轮次；当前稿整份更新；按用户删除一场 |
 | `diagnosis.ts` | Rubric、报告（幂等建档）、短板（按报告 / 按用户）、技能得分历史、`saveDiagnosis` 单事务 |
 
 **规则**

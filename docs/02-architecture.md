@@ -388,7 +388,7 @@ ALLOWED_PROVIDERS=*            # 对外开放时改为国内已备案 provider �
 
 | 文件 | 职责 |
 |---|---|
-| `agent/llm/providers.ts` | `kind` → LangChain 模型类工厂：`openai-compatible`（`ChatOpenAI` + `baseURL`）、`deepseek`、`ollama`，可按需扩展 |
+| `agent/llm/providers.ts` | `kind` → LangChain 模型类工厂：`openai-compatible`（`ChatOpenAI` + `baseURL`）、`dg-custom`（同样是 OpenAI 兼容，并带 `X-Product` 等默认请求头）、`deepseek`、`ollama`，可按需扩展 |
 | `agent/llm/registry.ts` | 解析 `MODEL_*`，按别名返回模型实例（带缓存）；启动时校验别名完整、provider 在 `ALLOWED_PROVIDERS` 内 |
 | `agent/llm/caps.ts` | 模型能力表（内置常见模型 + `MODEL_CAPS_*` 覆盖） |
 | `agent/llm/structured.ts` | 结构化输出：按能力选择方式 → Zod 校验 → 修复重试 |

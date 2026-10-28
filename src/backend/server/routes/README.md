@@ -11,6 +11,7 @@
 | `profile.ts` | GET/PUT /api/profile、POST /api/profile/extract |
 | `jobs.ts` | GET/POST /api/jobs、GET /api/jobs/:id |
 | `resumes.ts` | 列表、流式生成、读取、另存版本、导出 |
+| `studio.ts` | 创建策划、退出后续聊、删除一场、流式 chat、读取当前稿、导出 |
 | `interviews.ts` | 创建文字面试、流式 chat、读取进度、主动结束 |
 | `training.ts` | POST /api/training：按报告里的一条短板开专项训练（返回会话摘要，之后走 interviews） |
 | `reports.ts` | GET /api/reports（可带 ?sessionId=）、GET /api/reports/:id、POST /api/reports/:id/retry |

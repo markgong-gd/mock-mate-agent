@@ -55,6 +55,17 @@ describe('echo graph', () => {
     });
   });
 
+  it('停在 wait_answer 时空回答返回 VALIDATION，不推进存档', async () => {
+    const t = 'thread-empty';
+    await readAll(await streamEchoTurn(ctx, { threadId: t, answer: '' }));
+    await expect(streamEchoTurn(ctx, { threadId: t, answer: '   ' })).rejects.toMatchObject({
+      code: 'VALIDATION',
+    });
+    const view = await getEchoThread(ctx, t);
+    expect(view.next).toEqual(['wait_answer']);
+    expect(view.messages).toHaveLength(1);
+  });
+
   it('换一个图实例（同一存档，模拟进程重启）后可继续 resume', async () => {
     const t = 'thread-b';
     await readAll(await streamEchoTurn(ctx, { threadId: t, answer: '' }));

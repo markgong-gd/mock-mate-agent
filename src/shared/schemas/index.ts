@@ -10,3 +10,4 @@ export * from './profile';
 export * from './question';
 export * from './resume';
 export * from './skill-tags';
+export * from './studio';

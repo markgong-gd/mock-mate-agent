@@ -11,3 +11,4 @@ export * from './consent';
 export * from './question';
 export * from './interview';
 export * from './diagnosis';
+export * from './studio';

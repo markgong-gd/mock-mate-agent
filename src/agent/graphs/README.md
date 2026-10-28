@@ -9,6 +9,7 @@
 | [extract/](extract/) | 单节点抽取图。profile 和 job 各一张，不挂 checkpointer：失败就整次重试 |
 | [resume/](resume/) | load → retrieve_facts → generate → guard → save。一次请求内跑完，失败不留半成品 |
 | [interview/](interview/) | plan_questions → ask → wait_answer(interrupt) → evaluate → 追问 / 下一题 / finalize。挂 PostgresSaver。出题会先读历史短板（`agent/tools`），`settings.drillTag` 不为空时只问那一个技能 |
+| [studio/](studio/) | coach → speak → wait_user(interrupt) → coach。挂 PostgresSaver。不读档案，改稿前过防编造 |
 | [diagnosis/](diagnosis/) | load → Send 并行 score_answer → aggregate → extract_weaknesses → plan_training → persist。挂 PostgresSaver（thread = `diag:<reportId>`），由 pg-boss 在后台跑；persist 同时把短板写回档案 |
 
 **一张图的标准结构**：

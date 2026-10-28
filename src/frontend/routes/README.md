@@ -13,6 +13,8 @@
 | `resumes.tsx` | `/resumes` | 选择岗位并流式生成 |
 | `resume-editor.tsx` | `/resumes/:resumeId` | 编辑；保存成为新版本 |
 | `resume-print.tsx` | `/resumes/:resumeId/print` | 浏览器打印。未溯源时接口返回 409 |
+| `studio.tsx` | `/studio`、`/studio/:studioId` | 策划列表和对话。退出留着这场，列表里可以继续或删除 |
+| `studio-print.tsx` | `/studio/:studioId/print` | 浏览器打印，另存为 PDF |
 | `interviews.tsx` | `/interviews`、`/interviews/:interviewId` | 选设置、文字面试。刷新后从已落库轮次恢复；drill 场次带"专项训练"标记 |
 | `reports.tsx` | `/reports`、`/reports/:reportId` | 报告列表与详情：雷达图、逐题点评、短板证据（可一键专项训练）、复训计划、单场用量、Rubric |
 | `growth.tsx` | `/growth` | 成长曲线：按技能的得分趋势 + 总分趋势 |

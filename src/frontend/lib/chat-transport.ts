@@ -18,13 +18,26 @@ const lastUserText = (messages: UIMessage[]): string => {
 /**
  * 流式端点 transport（替换边界见 02 §1.3）：
  * 后端以存档为准，只需要本轮回答，不回传整段历史。
+ * AI SDK 的 sendMessage() 不带消息时也会走 submit-message，开始和续跑要用 sendEmpty() 强制空回答。
  */
 export function createAnswerTransport(api: string) {
-  return new DefaultChatTransport<UIMessage>({
+  let kick = false;
+  const transport = new DefaultChatTransport<UIMessage>({
     api,
     credentials: 'same-origin',
-    prepareSendMessagesRequest: ({ messages, trigger }) => ({
-      body: { answer: trigger === 'submit-message' ? lastUserText(messages) : '' },
-    }),
+    prepareSendMessagesRequest: ({ messages, trigger }) => {
+      if (kick) {
+        kick = false;
+        return { body: { answer: '' } };
+      }
+      return { body: { answer: trigger === 'submit-message' ? lastUserText(messages) : '' } };
+    },
   });
+  return {
+    transport,
+    /** 下一次发送改成空 answer，用于开始和从失败节点续跑 */
+    sendEmpty() {
+      kick = true;
+    },
+  };
 }

@@ -35,6 +35,38 @@ describe('parseServerEnv', () => {
     expect(env.llm.models.extract).toEqual({ provider: 'glm', model: 'glm-4-flash', id: 'glm:glm-4-flash' });
   });
 
+  it('dg-custom 需要地址和密钥，并收下可选网关头', () => {
+    expect(() =>
+      parseServerEnv(baseTestEnv({ PROVIDERS: 'fake,dg-custom', PROVIDER_DG_CUSTOM_KIND: 'dg-custom' })),
+    ).toThrow(/PROVIDER_DG_CUSTOM_BASE_URL[\s\S]*PROVIDER_DG_CUSTOM_API_KEY/);
+
+    const env = parseServerEnv(
+      baseTestEnv({
+        PROVIDERS: 'fake,dg-custom',
+        PROVIDER_DG_CUSTOM_KIND: 'dg-custom',
+        PROVIDER_DG_CUSTOM_BASE_URL: 'https://copilot.tencent.com/v2',
+        PROVIDER_DG_CUSTOM_API_KEY: 'ck_test',
+        PROVIDER_DG_CUSTOM_ENTERPRISE_ID: 'ent',
+        PROVIDER_DG_CUSTOM_USER_ID: 'user-1',
+        PROVIDER_DG_CUSTOM_IDE_NAME: 'Cursor',
+        MODEL_CHAT: 'dg-custom:claude-opus-4.8-1m',
+      }),
+    );
+    expect(env.llm.providers['dg-custom']).toMatchObject({
+      kind: 'dg-custom',
+      baseUrl: 'https://copilot.tencent.com/v2',
+      apiKey: 'ck_test',
+      enterpriseId: 'ent',
+      userId: 'user-1',
+      ideName: 'Cursor',
+    });
+    expect(env.llm.models.chat).toEqual({
+      provider: 'dg-custom',
+      model: 'claude-opus-4.8-1m',
+      id: 'dg-custom:claude-opus-4.8-1m',
+    });
+  });
+
   it('模型别名引用未声明的 provider 时报错', () => {
     expect(() => parseServerEnv(baseTestEnv({ MODEL_CHAT: 'nope:x' }))).toThrow(/MODEL_CHAT.*nope/);
   });

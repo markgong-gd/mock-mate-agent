@@ -12,6 +12,7 @@
 | `usage.service.ts` | 单场用量聚合、成本现算（agent/llm/pricing）、单场 Token 上限（`BUDGET_EXCEEDED`） |
 | `backup.service.ts` | pg_dump 备份 |
 | `interview.service.ts` | 文字面试：创建、加锁、先写回答、推进图、结束 |
+| `studio.service.ts` | 简历策划：创建、加锁、先写原话、推进图、导出稿、删除 |
 | `training.service.ts` | 专项训练：按报告里的一条短板建 `kind = drill` 的会话，之后复用面试链路 |
 | `diagnosis.service.ts` | C3 诊断：幂等建档 + 入队、跑诊断图、报告视图、手动重试 |
 | `growth.service.ts` | 成长曲线：技能得分历史分组 + 总分折线 |

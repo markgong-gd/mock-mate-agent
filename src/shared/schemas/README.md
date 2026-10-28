@@ -8,6 +8,7 @@ Zod schema 是档案、JD、简历、同意、题库种子的类型来源。API 
 | `profile.ts` | 模型输出的档案草稿（无 id、无联系方式）和用户确认后的档案 |
 | `job.ts` | JD 抽取结果与落库后的岗位 |
 | `resume.ts` | 简历内容。每条 bullet 的 `factRefs` 至少 1 个 |
+| `studio.ts` | 策划简历。没有 factRefs，材料来自这场对话 |
 | `consent.ts` | 简历解析同意的目的与版本 |
 | `question.ts` | 题库种子、检索结果、进入面试图的题目 |
 | `interview.ts` | 面试设置（含专项训练的 `drillTag`）、评估结果、进度和接口入参 |

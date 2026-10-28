@@ -43,6 +43,13 @@
       "when": 1793098217652,
       "tag": "0005_p6_master_resume",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793159246010,
+      "tag": "0006_studio",
+      "breakpoints": true
     }
   ]
 }

@@ -84,7 +84,7 @@ export async function getEchoThread(ctx: RequestCtx, threadId: string): Promise<
 /**
  * 推进回声图一轮，返回 UI Message Stream：
  * - 无存档：从头开始（ask → wait_answer 中断）
- * - 停在 wait_answer：Command({ resume: answer })
+ * - 停在 wait_answer：Command({ resume: answer })；空回答直接拒绝
  * - 停在其它节点（上次中途失败）：stream(null) 从失败节点续跑
  */
 export async function streamEchoTurn(
@@ -97,13 +97,16 @@ export async function streamEchoTurn(
   const snap = await graph.getState(cfg);
   const started = Boolean(snap.config?.configurable?.checkpoint_id);
 
+  const answer = input.answer.trim();
   let graphInput: Parameters<EchoGraph['stream']>[0];
   let mode: 'start' | 'resume' | 'continue';
   if (!started) {
     graphInput = {};
     mode = 'start';
   } else if (snap.next.includes('wait_answer')) {
-    graphInput = new Command({ resume: input.answer });
+    // 空字符串在 LangGraph 里是 falsy，Command({ resume: '' }) 不会产生写入，直接抛 EmptyInputError
+    if (!answer) throw new AppError('VALIDATION', '请先提交回答');
+    graphInput = new Command({ resume: answer });
     mode = 'resume';
   } else if (snap.next.length > 0) {
     graphInput = null;

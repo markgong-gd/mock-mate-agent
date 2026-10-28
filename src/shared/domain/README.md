@@ -12,6 +12,8 @@
 | `retrieval/rrf.ts` | 多路召回的倒数排名融合 |
 | `retrieval/recall.ts` | recall@k，给检索小样本用 |
 | `interview/route.ts` | 评估后 follow_up / next / finish |
+| `studio/guard.ts` | 策划稿：公司和数字必须能在这场对话的原话里找到 |
+| `studio/phase.ts` | 策划阶段：先问岗位，确认后才能导出 |
 | `interview/allocate.ts` | 出题：短板优先、技能覆盖、难度梯度 |
 | `diagnosis/aggregate.ts` | 维度分 / 总分 / 技能分聚合 |
 | `weakness/merge.ts` | 短板写回档案：按 tag 去重、严重度取较大值、状态流转（open / improving / closed） |

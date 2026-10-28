@@ -17,6 +17,7 @@ features/<领域>/
 | `jobs/` | 岗位列表、创建、匹配度展示 |
 | `resumes/` | 版本列表和预览。生成流不走这里，页面直接用 useObject |
 | `interview/` | 面试列表、创建、结束。对话流在页面里用 useChat |
+| `studio/` | 策划列表、继续和删除、简历纸和 Agent 运行步骤。对话流在页面里用 useChat |
 | `reports/` | 报告列表与详情（生成中按 2 秒轮询）、单场用量、一键专项训练；`radar.tsx` 手写 SVG 雷达图 |
 | `growth/` | 成长曲线数据；`trend.tsx` 手写 SVG 折线（纵轴固定 1–5，便于跨技能对比） |
 

@@ -115,7 +115,12 @@ export async function generateStructuredWith<T extends z.ZodType>(
     callbacks: opts.callbacks,
     tags: opts.tags,
     runName: meta.functionId,
-    metadata: { functionId: meta.functionId, promptVersion: meta.promptVersion, sessionId: meta.sessionId },
+    metadata: {
+      functionId: meta.functionId,
+      promptVersion: meta.promptVersion,
+      sessionId: meta.sessionId,
+      structuredMethod: method,
+    },
   };
   let convo =
     method === 'jsonMode' || method === 'prompt'

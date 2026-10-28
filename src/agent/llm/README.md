@@ -6,7 +6,7 @@
 .env: MODEL_CHAT=deepseek:deepseek-chat
         │
 registry.getChatModel('chat') ──> providers.createChatModel(kind) ──> LangChain 模型实例
-        │                                 openai-compatible | deepseek | ollama | fake
+        │                                 openai-compatible | deepseek | ollama | fake | dg-custom
         ├── caps.ts       能力表 → 结构化输出方式
         ├── resilience.ts getChatRunnable：带 MODEL_FALLBACK 兜底（图节点用）
         ├── structured.ts generateStructured：Zod 校验 + 修复重试 + fallback
